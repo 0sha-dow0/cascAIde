@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DepCover — Dependency Transplant Engine</title>
+<style>
+  :root { --bg:#0a0d13; --panel:#111721; --panel2:#0d131c; --line:#1e2937; --fg:#cdd8ea; --dim:#6f83a0; --acc:#4cc2ff; --ok:#3ad29f; --bad:#ff6b81; --warn:#ffcf6b; --vuln:#ff5470; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body { background:radial-gradient(1200px 600px at 70% -10%, #12203a 0%, var(--bg) 60%); color:var(--fg); font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header { padding:14px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:14px; }
+  header h1 { font-size:17px; margin:0; letter-spacing:.5px; }
+  header .tag { color:var(--dim); font-size:12px; }
+  .repobar { padding:12px 22px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--line); background:var(--panel2); }
+  input[type=text]{ flex:1; min-width:280px; background:#0b111a; border:1px solid var(--line); color:var(--fg); padding:9px 12px; border-radius:7px; font:inherit; }
+  input[type=text]:focus{ outline:none; border-color:var(--acc); }
+  button { background:#172131; color:var(--fg); border:1px solid var(--line); padding:9px 15px; border-radius:7px; cursor:pointer; font:inherit; }
+  button:hover:not(:disabled){ border-color:var(--acc); } button:disabled{ opacity:.4; cursor:default; }
+  button.primary { background:var(--acc); color:#04121c; border-color:var(--acc); font-weight:600; }
+  button.small { padding:4px 10px; font-size:12px; }
+  .wrap { padding:16px 22px; display:flex; flex-direction:column; gap:16px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+  .panel > h2 { font-size:11.5px; text-transform:uppercase; letter-spacing:1.4px; color:var(--dim); margin:0; padding:12px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .panel > .body { padding:14px 16px; overflow:auto; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:1050px){ .cols{ grid-template-columns:1fr; } }
+  .muted { color:var(--dim); } .err { color:var(--bad); }
+  /* graph */
+  #graphwrap { position:relative; height:340px; background:var(--panel2); border-radius:0 0 12px 12px; overflow:hidden; }
+  svg { width:100%; height:100%; display:block; }
+  .legend { display:flex; gap:16px; font-size:11.5px; color:var(--dim); }
+  .legend b { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+  .n-label { fill:var(--fg); font:10px ui-monospace; }
+  .e-imports{ stroke:#3d5a80; } .e-calls{ stroke:#5a7d5a; } .e-depends_on{ stroke:#3a3a5a; stroke-dasharray:4 3; }
+  @keyframes pulse { 0%{ r:30; opacity:.55 } 70%{ r:44; opacity:0 } 100%{ r:44; opacity:0 } }
+  .vuln-ring { fill:none; stroke:var(--vuln); stroke-width:2; animation:pulse 1.8s ease-out infinite; }
+  /* lists / cards */
+  .cs { padding:7px 10px; border-left:2px solid var(--line); margin:5px 0; background:#0c1219; border-radius:0 6px 6px 0; }
+  .cs.alias { border-left-color:var(--warn); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:20px; font-size:11px; border:1px solid var(--line); }
+  .pill.alias { color:var(--warn); border-color:var(--warn); } .pill.vuln { color:var(--vuln); border-color:var(--vuln); }
+  .cards { display:flex; flex-direction:column; gap:9px; }
+  .card { border:1px solid var(--line); border-radius:9px; padding:11px 13px; background:#0c1219; }
+  .card.exec { border-color:var(--acc); box-shadow:0 0 0 1px rgba(76,194,255,.15); }
+  .card h3 { margin:0 0 4px; font-size:13.5px; }
+  .card .meta { color:var(--dim); font-size:12px; margin-bottom:4px; }
+  .steps { display:flex; flex-direction:column; gap:2px; }
+  .step { padding:6px 8px; border-radius:6px; display:flex; gap:8px; align-items:center; }
+  .step .dot { width:8px; height:8px; border-radius:50%; background:var(--acc); flex:none; }
+  .step.done .dot{ background:var(--ok); } .step.term .dot{ background:var(--warn); }
+  .term-completed .dot,.term-awaiting_review .dot{ background:var(--ok)!important; } .term-contested .dot{ background:var(--warn)!important; } .term-failed .dot,.term-rejected .dot{ background:var(--bad)!important; }
+  .consensus { font-weight:700; padding:9px 12px; border-radius:8px; margin-bottom:10px; }
+  .consensus.ok { background:rgba(58,210,159,.12); color:var(--ok); border:1px solid rgba(58,210,159,.3); }
+  .consensus.no { background:rgba(255,207,107,.1); color:var(--warn); border:1px solid rgba(255,207,107,.3); }
+  .verdict { padding:9px 11px; border:1px solid var(--line); border-radius:8px; margin:7px 0; background:#0c1219; }
+  .verdict.approve { border-left:3px solid var(--ok); } .verdict.reject { border-left:3px solid var(--bad); }
+  .badge { font-size:11px; padding:1px 8px; border-radius:20px; font-weight:700; }
+  .badge.approve{ background:rgba(58,210,159,.15); color:var(--ok); } .badge.reject{ background:rgba(255,107,129,.15); color:var(--bad); }
+  .filediff { border:1px solid var(--line); border-radius:9px; margin:9px 0; overflow:hidden; }
+  .filediff .fh { padding:8px 12px; background:#0e151f; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  pre.diff { margin:0; padding:10px 12px; white-space:pre-wrap; font-size:12.5px; overflow-x:auto; }
+  pre.diff .add { color:var(--ok); background:rgba(58,210,159,.08); display:block; }
+  pre.diff .del { color:var(--bad); background:rgba(255,107,129,.08); display:block; }
+  pre.diff .hd { color:var(--dim); }
+  label.rw { font-size:12px; cursor:pointer; user-select:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>▚ DepCover</h1>
+  <span class="tag">impact analysis + autonomous library transplant · axios → fetch · behavioral proof · 4-judge consensus</span>
+</header>
+<div class="repobar">
+  <input id="repo" type="text" value="https://github.com/depcover/victim-axios" placeholder="Public GitHub repo URL (e.g. https://github.com/owner/name)" />
+  <button id="scan" class="primary">Scan repo</button>
+  <button id="fire" disabled>Fire CVE incident</button>
+  <span id="status" class="muted"></span>
+</div>
+
+<div class="wrap">
+  <div class="panel">
+    <h2>Dependency &amp; call-site graph
+      <span class="legend"><span><b style="background:var(--vuln)"></b>vulnerable dep</span><span><b style="background:#5f8fd6"></b>file</span><span><b style="background:var(--warn)"></b>aliased call site</span><span><b style="background:#7d8aa0"></b>call site</span></span>
+    </h2>
+    <div id="graphwrap"><div class="body muted" id="graphempty">Enter a public repo and Scan to build the call-site graph. The graph catches aliased imports (<code>const http = require('axios')</code>) that grep misses.</div><svg id="svg" style="display:none"></svg></div>
+  </div>
+
+  <div class="cols">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="panel"><h2>What's vulnerable · how it changes</h2><div class="body" id="vuln"><span class="muted">—</span></div></div>
+      <div class="panel"><h2>Underwriting · kill-test blast radius</h2><div class="body" id="under"><span class="muted">—</span></div></div>
+      <div class="panel"><h2>Mitigation strategies</h2><div class="body" id="mit"><span class="muted">—</span></div></div>
+      <div class="panel"><h2>Live pipeline</h2><div class="body steps" id="log"><span class="muted">—</span></div></div>
+    </div>
+    <div class="panel"><h2>Diff review · judge verdicts <span id="revhint" class="muted" style="font-size:11px;text-transform:none;letter-spacing:0"></span></h2><div class="body" id="review"><span class="muted">Runs after you choose the transplant strategy.</span></div></div>
+  </div>
+</div>
+
+<script>
+const TOKEN="demo-token";
+const H={"Authorization":"Bearer "+TOKEN,"Content-Type":"application/json"};
+let repoId=null, incidentId=null, transplantId=null, aliasSyms=new Set();
+const $=id=>document.getElementById(id);
+const setStatus=(t,cls="muted")=>{ $("status").className=cls; $("status").textContent=t; };
+async function post(u,b){ const r=await fetch(u,{method:"POST",headers:H,body:JSON.stringify(b)}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+async function get(u){ const r=await fetch(u,{headers:H}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+const esc=s=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+function drawGraph(layout, plan){
+  aliasSyms = new Set(plan.call_sites.filter(c=>c.is_aliased).map(c=>c.symbol));
+  const target = plan.target_package;
+  const nodes=layout.nodes, edges=layout.edges;
+  if(!nodes.length){ return; }
+  const byId={}; nodes.forEach(n=>byId[n.id]=n);
+  const xs=nodes.map(n=>n.x), ys=nodes.map(n=>n.y);
+  const pad=60, minx=Math.min(...xs), maxx=Math.max(...xs), miny=Math.min(...ys), maxy=Math.max(...ys);
+  const W=Math.max(maxx-minx,300)+pad*2, He=Math.max(maxy-miny,200)+pad*2;
+  const X=x=>x-minx+pad, Y=y=>y-miny+pad;
+  const svg=$("svg"); $("graphempty").style.display="none"; svg.style.display="block";
+  svg.setAttribute("viewBox",`0 0 ${W} ${He}`);
+  let s=`<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6" fill="#44546e"/></marker></defs>`;
+  edges.forEach(e=>{ const a=byId[e.src],b=byId[e.dst]; if(!a||!b) return;
+    s+=`<line class="e-${e.kind}" x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke-width="1.4" marker-end="url(#ar)"/>`; });
+  nodes.forEach(n=>{
+    const cx=X(n.x), cy=Y(n.y);
+    if(n.kind==="package"){
+      const vuln = n.label===target;
+      if(vuln) s+=`<circle class="vuln-ring" cx="${cx}" cy="${cy}"/>`;
+      s+=`<circle cx="${cx}" cy="${cy}" r="22" fill="${vuln?'#2a0f18':'#182131'}" stroke="${vuln?'var(--vuln)':'#3a4a63'}" stroke-width="2"/>`;
+      s+=`<text class="n-label" x="${cx}" y="${cy+4}" text-anchor="middle" fill="${vuln?'#ff9fb0':'#9fb2cf'}" font-weight="700">${esc(n.label)}</text>`;
+      if(vuln) s+=`<text x="${cx}" y="${cy-30}" text-anchor="middle" fill="var(--vuln)" font="9px" font-size="10" font-weight="700">⚠ VULNERABLE</text>`;
+    } else if(n.kind==="file"){
+      const w=Math.min(Math.max(n.label.length*6.2,54),150);
+      s+=`<rect x="${cx-w/2}" y="${cy-11}" width="${w}" height="22" rx="5" fill="#132033" stroke="#3f5f86"/>`;
+      s+=`<text class="n-label" x="${cx}" y="${cy+4}" text-anchor="middle" fill="#9fc0ee">${esc(n.label)}</text>`;
+    } else {
+      const al=aliasSyms.has(n.label);
+      s+=`<circle cx="${cx}" cy="${cy}" r="8" fill="${al?'#3a2f12':'#1b2431'}" stroke="${al?'var(--warn)':'#7d8aa0'}" stroke-width="1.6"/>`;
+      s+=`<text class="n-label" x="${cx+12}" y="${cy+4}" fill="${al?'var(--warn)':'#8fa0ba'}">${esc(n.label)}${al?' ⟨alias⟩':''}</text>`;
+    }
+  });
+  svg.innerHTML=s;
+}
+
+$("scan").onclick=async()=>{
+  try{
+    const url=$("repo").value.trim(); if(!url){setStatus("enter a repo url","err");return;}
+    setStatus("cloning + scanning… (public repos are git-cloned live)");
+    const d=await post("/repos",{url,owner:"demo"}); repoId=d.repo.id;
+    const plan=d.surgery_plan;
+    drawGraph(d.graph_layout, plan);
+    const aliased=plan.call_sites.filter(c=>c.is_aliased);
+    $("vuln").innerHTML =
+      `<div><span class="pill vuln">${plan.target_package}</span> is the flagged dependency — ${plan.affected_files.length} file(s), ${plan.call_sites.length} call site(s).</div>`+
+      `<div style="margin:8px 0" class="muted">Why it's risky: outdated/compromised HTTP client (SSRF/CVE surface), and axios <b>throws on non-2xx</b> — a semantic contract fetch does not share.</div>`+
+      `<div><b>How it changes:</b> each call site is rewritten to a native <code>fetch</code> wrapper that throws on non-2xx and parses JSON, so behavior is preserved. Proven by the behavioral diff, gated by 4 judges + you.</div>`+
+      `<div style="margin-top:8px"><b>Call sites (surgery plan):</b></div>`+
+      plan.call_sites.map(c=>`<div class="cs ${c.is_aliased?'alias':''}"><b>${esc(c.file_path)}</b>:${c.line} · <code>${esc(c.symbol)}</code> ${c.is_aliased?`<span class="pill alias">aliased → ${esc(c.alias)} (grep misses this)</span>`:''}</div>`).join("");
+    const u=d.underwriting;
+    $("under").innerHTML=`<div>Affected files: <b>${u.affected_file_count}</b> · Failing tests captured: <b>${u.failing_tests.length}</b> · axios centrality: <b>${(u.centrality[0]?.score??0).toFixed(2)}</b></div>`+
+      (u.failing_tests.length?"<ul>"+u.failing_tests.map(t=>`<li class="err">${esc(t)}</li>`).join("")+"</ul>":`<div class="muted" style="margin-top:6px">Graph proves ${u.affected_file_count} files touch the target${aliased.length?` including ${aliased.length} aliased site(s) grep would miss`:''}.</div>`)+
+      (u.warnings.length?`<div class="muted" style="margin-top:6px">warnings: ${u.warnings.map(w=>esc(w.shape)).join(", ")}</div>`:"");
+    $("fire").disabled=false; setStatus("scanned ✓","muted");
+  }catch(e){ setStatus("scan failed: "+shortErr(e),"err"); }
+};
+
+$("fire").onclick=async()=>{
+  try{
+    setStatus("firing CVE…");
+    const d=await post("/incidents",{repo_id:repoId}); incidentId=d.incident.id;
+    $("mit").innerHTML=`<div class="cards">`+d.options.options.map(o=>`
+      <div class="card ${o.executable?'exec':''}">
+        <h3>${esc(o.title)} ${o.executable?'<span class="pill">executed end-to-end</span>':'<span class="pill muted">roadmap</span>'}</h3>
+        <div class="meta">effort ${esc(o.effort)} · blast ${esc(o.blast_radius)} · residual ${esc(o.residual_risk)}</div>
+        <div>${esc(o.rationale)}</div>
+        ${o.executable?`<button class="primary small" style="margin-top:8px" onclick="runTransplant('${o.kind}')">Run transplant ▶</button>`:''}
+      </div>`).join("")+`</div>`;
+    setStatus("incident open — choose a strategy","muted");
+  }catch(e){ setStatus("incident failed: "+shortErr(e),"err"); }
+};
+
+const STAGES=["recall","rewrite","validate","verify_build","verify_test","verify_behavioral","judge"];
+window.runTransplant=async(kind)=>{
+  try{
+    $("log").innerHTML=STAGES.map(s=>`<div class="step" id="st-${s}"><span class="dot"></span>${s}</div>`).join("");
+    setStatus("pipeline running (real coder + 4 real judges)…");
+    await post(`/incidents/${incidentId}/strategy`,{strategy:kind});
+    transplantId="transplant-"+incidentId;
+    const es=new EventSource(`/incidents/${incidentId}/stream`);
+    es.onmessage=m=>{
+      const e=JSON.parse(m.data), el=$("st-"+e.stage);
+      if(el){ el.classList.add(e.terminal?"term":"done","term-"+e.stage); el.innerHTML=`<span class="dot"></span>${e.stage} — ${esc(e.message)}`; }
+      else if(e.terminal){ const d=document.createElement("div"); d.className="step term term-"+e.stage; d.innerHTML=`<span class="dot"></span>${e.stage} — ${esc(e.message)}`; $("log").appendChild(d); }
+      if(e.terminal){ es.close(); setStatus("pipeline "+e.stage,"muted"); loadReview(); }
+    };
+    es.onerror=()=>es.close();
+  }catch(e){ setStatus("pipeline failed: "+shortErr(e),"err"); }
+};
+
+async function loadReview(){
+  try{
+    const t=await get(`/transplants/${transplantId}`), c=t.consensus;
+    const cbanner=`<div class="consensus ${c.approved?'ok':'no'}">${c.approved?'✓ CONSENSUS APPROVED':'⚠ CONTESTED'} · ${c.approvals}/${c.panel_size} judges approve — human review required</div>`;
+    const verdicts=c.verdicts.map(v=>`<div class="verdict ${v.verdict}"><b>${esc(v.judge_name)}</b> <span class="badge ${v.verdict}">${v.verdict.toUpperCase()}</span><div class="muted" style="margin-top:3px">${esc(v.rationale)}</div></div>`).join("");
+    const files=t.diff.map((f,i)=>`
+      <div class="filediff">
+        <div class="fh"><b>${esc(f.path)}</b>
+          <span><label class="rw"><input type="radio" name="rw${i}" value="accept" checked onchange="syncAccept()"> accept</label>
+          <label class="rw" style="margin-left:8px"><input type="radio" name="rw${i}" value="reject" onchange="syncAccept()"> reject</label></span></div>
+        <pre class="diff">${colorDiff(f.unified_diff)}</pre>
+      </div>`).join("");
+    $("review").innerHTML=cbanner+`<div style="margin:6px 0"><b>Judges</b></div>`+verdicts+
+      `<div style="margin:12px 0 4px"><b>Per-file diff — how it changes</b> <span class="muted">(axios → fetch wrapper)</span></div>`+files+
+      `<div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="primary" id="acceptBtn" onclick="submitReview()">Accept all → open PR</button><button onclick="rejectAll()">Reject transplant</button><span id="pr" class="muted"></span></div>`;
+    $("revhint").textContent="";
+  }catch(e){ $("review").innerHTML=`<span class="err">No transplant to review — the pipeline may have failed or was contested. ${esc(shortErr(e))}</span>`; }
+}
+window.syncAccept=()=>{ const anyReject=[...document.querySelectorAll('input[type=radio]:checked')].some(r=>r.value==="reject"); const b=$("acceptBtn"); if(b){ b.disabled=anyReject; b.textContent=anyReject?"Some files rejected — PR blocked":"Accept all → open PR"; } };
+window.submitReview=async()=>{
+  try{
+    const t=await get(`/transplants/${transplantId}`);
+    const per_file=t.diff.map(f=>({path:f.path,kind:"accept",reason:null}));
+    const d=await post(`/transplants/${transplantId}/review`,{decision:"accept_all",per_file,reason:null});
+    $("pr").innerHTML=d.pull_request?` PR opened → <a style="color:var(--acc)" href="${d.pull_request.url}">#${d.pull_request.number}</a> · ${d.status}`:` status ${d.status}`;
+  }catch(e){ $("pr").innerHTML=`<span class="err">${esc(shortErr(e))}</span>`; }
+};
+window.rejectAll=async()=>{
+  try{
+    const t=await get(`/transplants/${transplantId}`);
+    const per_file=t.diff.map((f,i)=>({path:f.path,kind:i===0?"reject":"accept",reason:i===0?"needs manual review":null}));
+    const d=await post(`/transplants/${transplantId}/review`,{decision:"reject",per_file,reason:"rejected on review"});
+    $("pr").innerHTML=` status ${d.status} — PR blocked (no half-transplant ships)`;
+  }catch(e){ $("pr").innerHTML=`<span class="err">${esc(shortErr(e))}</span>`; }
+};
+
+function colorDiff(s){ return esc(s).split("\n").map(l=> l.startsWith("+")?`<span class="add">${l}</span>`:l.startsWith("-")?`<span class="del">${l}</span>`:l.startsWith("@@")||l.startsWith("---")||l.startsWith("+++")?`<span class="hd">${l}</span>`:l).join("\n"); }
+function shortErr(e){ try{ const j=JSON.parse(e.message); return (j.detail&&j.detail.message)||j.message||e.message; }catch{ return (e.message||"").slice(0,160); } }
+</script>
+</body>
+</html>
