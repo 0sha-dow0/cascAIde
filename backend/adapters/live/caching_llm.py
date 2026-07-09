@@ -1,11 +1,19 @@
 from collections import OrderedDict
-from typing import Final
+from typing import Final, Protocol
 
 from backend.domain.enums import LlmRole
 from backend.domain.errors import ConfigError, Err, LlmError, Ok, Result
 from backend.ports.llm import LlmClient, LlmClientFactory, LlmRequest, LlmResponse
 
 _MAX_ENTRIES: Final[int] = 512
+
+
+class LlmResponseCache(Protocol):
+    """Pluggable store for memoized LLM responses (in-process bounded, or Redis-backed)."""
+
+    def get(self, req: LlmRequest) -> LlmResponse | None: ...
+
+    def put(self, req: LlmRequest, response: LlmResponse) -> None: ...
 
 
 class _BoundedCache:
@@ -35,7 +43,7 @@ class _BoundedCache:
 class CachingLlmClient(LlmClient):
     """Wraps an LlmClient so identical requests return a cached response (no API call)."""
 
-    def __init__(self, inner: LlmClient, cache: _BoundedCache) -> None:
+    def __init__(self, inner: LlmClient, cache: LlmResponseCache) -> None:
         self._inner = inner
         self._cache = cache
 
@@ -50,11 +58,14 @@ class CachingLlmClient(LlmClient):
 
 
 class CachingLlmClientFactory(LlmClientFactory):
-    """Wraps a factory so every role's client memoizes on the request, sharing one cache."""
+    """Wraps a factory so every role's client memoizes on the request, sharing one cache.
 
-    def __init__(self, inner: LlmClientFactory, capacity: int = _MAX_ENTRIES) -> None:
+    Pass a Redis-backed cache for durability across restarts; defaults to in-process bounded.
+    """
+
+    def __init__(self, inner: LlmClientFactory, cache: LlmResponseCache | None = None) -> None:
         self._inner = inner
-        self._cache = _BoundedCache(capacity)
+        self._cache: LlmResponseCache = cache if cache is not None else _BoundedCache()
 
     def for_role(self, role: LlmRole) -> Result[LlmClient, ConfigError]:
         built = self._inner.for_role(role)
@@ -63,4 +74,4 @@ class CachingLlmClientFactory(LlmClientFactory):
         return Ok(CachingLlmClient(built.value, self._cache))
 
 
-__all__ = ("CachingLlmClient", "CachingLlmClientFactory")
+__all__ = ("CachingLlmClient", "CachingLlmClientFactory", "LlmResponseCache")

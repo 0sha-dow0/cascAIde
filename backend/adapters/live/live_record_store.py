@@ -20,7 +20,6 @@ from backend.domain.models import (
 )
 from backend.ports.record_store import RecordStore
 
-_AUTO_API_SEGMENT: Final = "auto-api"
 _EQ_PREFIX: Final = "eq."
 
 _METHOD_GET: Final = "GET"
@@ -28,7 +27,6 @@ _METHOD_POST: Final = "POST"
 _METHOD_PATCH: Final = "PATCH"
 
 _HEADER_AUTHORIZATION: Final = "Authorization"
-_HEADER_APIKEY: Final = "apikey"
 _HEADER_CONTENT_TYPE: Final = "Content-Type"
 _HEADER_PREFER: Final = "Prefer"
 _BEARER_PREFIX: Final = "Bearer "
@@ -66,18 +64,20 @@ _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
 class LiveRecordStore(RecordStore):
-    def __init__(self, base_url: str, service_key: str, timeout_s: float = 15.0) -> None:
+    def __init__(
+        self, base_url: str, app_id: str, service_key: str, timeout_s: float = 15.0
+    ) -> None:
         self._base_url: str = base_url
+        self._app_id: str = app_id
         self._service_key: str = service_key
         self._timeout_s: float = timeout_s
 
     def _table_url(self, table: str) -> str:
-        return f"{self._base_url.rstrip('/')}/{_AUTO_API_SEGMENT}/{table}"
+        return f"{self._base_url.rstrip('/')}/v1/{self._app_id}/{table}"
 
     def _service_headers(self) -> dict[str, str]:
         return {
             _HEADER_AUTHORIZATION: f"{_BEARER_PREFIX}{self._service_key}",
-            _HEADER_APIKEY: self._service_key,
             _HEADER_CONTENT_TYPE: _CONTENT_TYPE_JSON,
             _HEADER_PREFER: _PREFER_REPRESENTATION,
         }
@@ -118,9 +118,12 @@ class LiveRecordStore(RecordStore):
             parsed: object = response.json()
         except json.JSONDecodeError:
             return Err(RecordStoreError(_MALFORMED_MESSAGE, {"table": table}))
-        if not isinstance(parsed, list):
+        if isinstance(parsed, list):
+            rows: list[object] = list(parsed)
+        elif isinstance(parsed, dict):
+            rows = [parsed]  # Butterbase returns a POST-created row as a single object
+        else:
             return Err(RecordStoreError(_MALFORMED_MESSAGE, {"table": table}))
-        rows: list[object] = list(parsed)
         return Ok(rows)
 
     def _query(

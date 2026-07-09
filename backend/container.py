@@ -19,9 +19,11 @@ from backend.adapters.live.live_code_memory import LiveCogneeCloudCodeMemory
 from backend.adapters.live.live_github import LiveGitHubClient
 from backend.adapters.live.live_github_butterbase import ButterbaseGitHubClient
 from backend.adapters.live.live_graph_store import LiveGraphStore
-from backend.adapters.live.caching_llm import CachingLlmClientFactory
+from backend.adapters.live.caching_llm import CachingLlmClientFactory, LlmResponseCache
 from backend.adapters.live.live_llm import LiveLlmClientFactory
+from backend.adapters.live.redis_llm_cache import RedisResponseCache
 from backend.adapters.live.live_record_store import LiveRecordStore
+from backend.adapters.mirror_record_store import MirroringRecordStore
 from backend.config import Settings
 from backend.domain.determinism import Clock, IdGenerator, SequentialIdGenerator, SystemClock
 from backend.domain.enums import LlmRole, SandboxOutcome, StrategyKind
@@ -302,13 +304,27 @@ def _repeating_responses() -> Mapping[LlmRole, LlmResponse]:
     }
 
 
+def _build_llm_cache() -> LlmResponseCache | None:
+    # Redis-backed (durable across restarts) when DEPCOVER_REDIS_URL is set; else in-process.
+    url = os.environ.get("DEPCOVER_REDIS_URL", "").strip()
+    if not url:
+        return None
+    try:
+        import redis
+
+        return RedisResponseCache(redis.Redis.from_url(url))
+    except Exception:  # noqa: BLE001 — redis missing / bad URL → fall back to in-memory
+        return None
+
+
 def _build_llm(settings: Settings) -> LlmClientFactory:
     deterministic = _RepeatingLlmClientFactory(_repeating_responses())
     if settings.use_fakes:
         return deterministic
-    # Memoize live LLM calls so repeated transplant runs on the same repo don't re-hit the API.
+    # Memoize live LLM calls (Redis if configured, else in-process) so repeated transplant
+    # runs on the same repo don't re-hit the API.
     live = HybridLlmClientFactory(LiveLlmClientFactory(settings), deterministic, _LIVE_JUDGE_ROLES)
-    return CachingLlmClientFactory(live)
+    return CachingLlmClientFactory(live, _build_llm_cache())
 
 
 def _build_graph_store(settings: Settings) -> GraphStore:
@@ -325,19 +341,20 @@ def _build_graph_store(settings: Settings) -> GraphStore:
 
 
 def _build_record_store(settings: Settings, clock: Clock) -> RecordStore:
-    # Live Butterbase persistence (LiveRecordStore) rewrite is pending (Phase 3). Gate it behind an
-    # explicit opt-in so the auth cutover (Butterbase base_url) does not activate the old live store.
-    store_enabled = os.environ.get("DEPCOVER_BUTTERBASE_STORE", "").strip().lower() in _TRUE_TOKENS
+    primary = FakeRecordStore(clock)
+    # Mirror every write to Butterbase Postgres (real DB rows) when Butterbase is live. The
+    # in-memory store stays authoritative, so a DB hiccup can never break the pipeline.
     if (
-        store_enabled
-        and not settings.use_fakes
-        and _present(settings.butterbase_base_url)
-        and _env_present(settings.butterbase_key_env)
-        and settings.butterbase_key_env is not None
+        not settings.use_fakes
+        and _butterbase_ready(settings)
+        and settings.butterbase_app_id is not None
     ):
-        key = os.environ[settings.butterbase_key_env]
-        return LiveRecordStore(settings.butterbase_base_url or "", key)
-    return FakeRecordStore(clock)
+        key = os.environ[settings.butterbase_key_env or ""]
+        mirror = LiveRecordStore(
+            settings.butterbase_base_url or "", settings.butterbase_app_id, key
+        )
+        return MirroringRecordStore(primary, mirror)
+    return primary
 
 
 _DAYTONA_DEFAULT_URL: Final[str] = "https://app.daytona.io/api"
