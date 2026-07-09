@@ -73,5 +73,7 @@ I can make both changes for you via the Butterbase MCP as soon as you paste the 
 ## Notes
 - **Free-tier sleep**: Render/Neo4j-Aura free tiers idle out; the first request after idle is slow.
 - **Secrets**: only ever set them as host env vars. `backend/.env` and real secrets are git-ignored.
-- **Daytona** is off by default; the transplant still validates via the non-sandbox path. Flip
-  `DEPCOVER_USE_DAYTONA=true` + set `DAYTONA_API_KEY` to enable the real `node --check` sandbox.
+- **Daytona is required and stays ON** (`DEPCOVER_USE_DAYTONA=true` + `DAYTONA_API_KEY`): every
+  transplant is compiled with `node --check` in a real, network-blocked `node:20-alpine` sandbox,
+  so a rewrite only ships if it actually builds. The image (`node:20-alpine`) is created fresh per
+  run and deleted after. Requires the container to include the `daytona` pip package (it does).
