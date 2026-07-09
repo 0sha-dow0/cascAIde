@@ -1,4 +1,5 @@
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -6,6 +7,7 @@ from urllib.parse import quote
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -192,6 +194,19 @@ class ReviewRequest(BaseModel):
 
 def create_app(container: Container) -> FastAPI:
     app = FastAPI(title="DepCover")
+
+    # When the UI is hosted on a different origin (e.g. Butterbase) than this API,
+    # list its origin(s) in DEPCOVER_CORS_ORIGINS (comma-separated) to allow browser calls.
+    cors_origins = [o.strip() for o in os.environ.get("DEPCOVER_CORS_ORIGINS", "").split(",") if o.strip()]
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     pipeline_tasks: set[asyncio.Task[Any]] = set()
     user_dep = require_user(container)
 

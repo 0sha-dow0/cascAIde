@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { API_BASE } from "./session";
 import type { PipelineEvent } from "./types";
 
 export interface PipelineView { events: PipelineEvent[]; terminalStage: string | null; }
@@ -13,7 +14,7 @@ export function usePipelineStream(incidentId: string | null): PipelineView {
     seen.current = new Set();
     setEvents([]);
     setTerminalStage(null);
-    const source = new EventSource(`/incidents/${incidentId}/stream`);
+    const source = new EventSource(`${API_BASE}/incidents/${incidentId}/stream`);
     source.onmessage = (message) => {
       const event = JSON.parse(message.data) as PipelineEvent;
       if (seen.current.has(event.seq)) return;

@@ -15,11 +15,15 @@ export interface Session {
 const SESSION_KEY = "cascaide.session";
 const DEMO_TOKEN = "demo-token";
 
+// When the UI is hosted apart from the backend (e.g. UI on Butterbase, API on Render),
+// set VITE_API_BASE at build time to the backend origin. Empty = same-origin (all-in-one).
+export const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").replace(/\/$/, "");
+
 let _configPromise: Promise<AppConfig> | null = null;
 
 export function loadConfig(): Promise<AppConfig> {
   if (!_configPromise) {
-    _configPromise = fetch("/config")
+    _configPromise = fetch(`${API_BASE}/config`)
       .then((r) => r.json() as Promise<AppConfig>)
       .catch(() => ({ auth_required: false, butterbase_host: null, app_id: null }));
   }

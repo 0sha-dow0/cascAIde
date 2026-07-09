@@ -6,18 +6,19 @@ import type {
 export type DiscussKind = "issue" | "discussion";
 export interface DiscussResult { kind: DiscussKind; number: number | null; url: string; }
 
-import { bearerToken, clearSession, getSession, refreshSession } from "./session";
+import { API_BASE, bearerToken, clearSession, getSession, refreshSession } from "./session";
 
 function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${bearerToken()}`, "Content-Type": "application/json" };
 }
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {
-  let res = await fetch(path, { ...init, headers: authHeaders() });
+  const url = `${API_BASE}${path}`;
+  let res = await fetch(url, { ...init, headers: authHeaders() });
   if (res.status === 401 && getSession()) {
     // Access token likely expired — refresh once and retry, else drop the session.
     if (await refreshSession()) {
-      res = await fetch(path, { ...init, headers: authHeaders() });
+      res = await fetch(url, { ...init, headers: authHeaders() });
     } else {
       clearSession();
       window.location.hash = "";

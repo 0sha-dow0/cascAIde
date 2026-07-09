@@ -1,22 +1,28 @@
 # Deploying cascAIde
 
-cascAIde ships as **one container**: a FastAPI backend that also serves the built React
-frontend. Everything else is a hosted service you point it at with env vars.
+Two hosting shapes are supported. Pick one:
+
+- **Split (sponsor setup):** React **UI on Butterbase** (`*.butterbase.dev`) + Python **backend
+  on Render**. Best sponsor coverage — Butterbase hosts the UI *and* powers auth/GitHub.
+- **All-in-one:** one container (backend serves the built UI) on Render. Simplest, one URL.
+
+Either way, everything else is a hosted service you point it at with env vars.
 
 ## What runs where
 
 | Piece | Where it lives | You do |
 |---|---|---|
-| **Backend + Frontend** | one container (this repo's `Dockerfile`) | deploy to Render / Railway / Fly |
-| **Butterbase** | hosted (`api.butterbase.ai`), already provisioned | set keys + add your prod URL to CORS & OAuth |
-| **Neo4j** | Neo4j Aura (free) or self-hosted | create an instance, copy URI + password |
+| **Frontend (React)** | Butterbase `*.butterbase.dev` (split) or inside the container (all-in-one) | build with `VITE_API_BASE` → deploy |
+| **Backend (Python)** | Render / Railway / Fly (`Dockerfile`) — Butterbase can't run Python | deploy container + set env vars |
+| **Butterbase** | hosted (`api.butterbase.ai`), already provisioned | keys + add your UI origin to CORS & OAuth |
+| **Neo4j** | Neo4j Aura (free) | copy URI + password |
 | **Cognee Cloud** | hosted (your tenant) | copy base URL + API key |
 | **Groq / OpenRouter** | hosted APIs | copy API keys |
 | **Daytona** | hosted (optional) | leave `DEPCOVER_USE_DAYTONA=false` to skip |
 
-The frontend calls the backend **same-origin** and derives the GitHub OAuth redirect from
-`window.location.origin`, so there is **no separate frontend deploy and no hardcoded URL** —
-one service, one domain.
+The GitHub OAuth redirect is derived from `window.location.origin`, so there's no hardcoded
+URL — only two knobs make the split work: **`VITE_API_BASE`** (UI build → backend origin) and
+**`DEPCOVER_CORS_ORIGINS`** (backend env → the UI origin, so the browser may call it).
 
 ## 1. Gather credentials
 Copy `.env.example` and fill it (you already have these in your local `backend/.env`):
@@ -38,9 +44,18 @@ Copy `.env.example` and fill it (you already have these in your local `backend/.
 - **Railway**: New Project → Deploy from repo → it builds the `Dockerfile`; add the same env vars.
 - **Fly.io**: `fly launch` (detects the Dockerfile) → `fly secrets set KEY=value ...` → `fly deploy`.
 
-## 3. Point Butterbase at your prod URL
-Once you have the deployed URL (e.g. `https://cascaide-xxxx.onrender.com`), it must be
-allow-listed or GitHub sign-in and API calls will be blocked by CORS/OAuth. Two updates:
+## 2b. (Split) Deploy the UI to Butterbase
+Once the backend has a URL (e.g. `https://cascaide-xxxx.onrender.com`):
+1. Build the UI pointing at it: `cd frontend && VITE_API_BASE=https://cascaide-xxxx.onrender.com npm run build`.
+2. Zip the output: `cd dist && zip -r ../frontend.zip .` (use forward slashes — Git Bash/WSL on Windows).
+3. `create_frontend_deployment(app_id, framework="react-vite")` → PUT the zip to the returned URL → `manage_frontend(start_deployment)`. Result: `https://<app>.butterbase.dev`.
+4. Set the backend's `DEPCOVER_CORS_ORIGINS=https://<app>.butterbase.dev` and redeploy the backend.
+
+(I can drive steps 3–4 for you via the Butterbase MCP once you paste the backend URL.)
+
+## 3. Point Butterbase at your UI origin
+Your UI origin (the `butterbase.dev` URL, or the Render URL for all-in-one) must be
+allow-listed or GitHub sign-in is blocked by CORS/OAuth. Two updates:
 
 1. **CORS** — add the prod origin to the Butterbase app's allowed origins.
 2. **GitHub OAuth redirect** — add `https://<your-prod-url>/#console` to the app's allowed
