@@ -19,6 +19,7 @@ from backend.adapters.live.live_code_memory import LiveCogneeCloudCodeMemory
 from backend.adapters.live.live_github import LiveGitHubClient
 from backend.adapters.live.live_github_butterbase import ButterbaseGitHubClient
 from backend.adapters.live.live_graph_store import LiveGraphStore
+from backend.adapters.live.caching_llm import CachingLlmClientFactory
 from backend.adapters.live.live_llm import LiveLlmClientFactory
 from backend.adapters.live.live_record_store import LiveRecordStore
 from backend.config import Settings
@@ -305,7 +306,9 @@ def _build_llm(settings: Settings) -> LlmClientFactory:
     deterministic = _RepeatingLlmClientFactory(_repeating_responses())
     if settings.use_fakes:
         return deterministic
-    return HybridLlmClientFactory(LiveLlmClientFactory(settings), deterministic, _LIVE_JUDGE_ROLES)
+    # Memoize live LLM calls so repeated transplant runs on the same repo don't re-hit the API.
+    live = HybridLlmClientFactory(LiveLlmClientFactory(settings), deterministic, _LIVE_JUDGE_ROLES)
+    return CachingLlmClientFactory(live)
 
 
 def _build_graph_store(settings: Settings) -> GraphStore:
