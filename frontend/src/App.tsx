@@ -131,6 +131,8 @@ export default function App({
   const doFire = async () => {
     if (!repoId) return;
     setStatus("Firing CVE incident…");
+    setTransplant(null);
+    setPlan(null);
     try {
       const d = await api.fireIncident(repoId);
       setIncidentId(d.incident.id); setOptions(d.options.options); setStatus("Incident open — choose a strategy");
@@ -149,8 +151,23 @@ export default function App({
       "Pipeline started",
     );
     try {
-      await api.chooseStrategy(incidentId, kind);
-      await pollForTransplant(incidentId);
+      let id = incidentId;
+      try {
+        await api.chooseStrategy(id, kind);
+      } catch (e) {
+        // An incident is single-use; if this one already ran (terminal), fire a fresh one and retry.
+        if (repoId && /terminal|already/i.test((e as Error).message ?? "")) {
+          setStatus("Previous run finished — firing a fresh incident…");
+          const d = await api.fireIncident(repoId);
+          id = d.incident.id;
+          setIncidentId(id);
+          setOptions(d.options.options);
+          await api.chooseStrategy(id, kind);
+        } else {
+          throw e;
+        }
+      }
+      await pollForTransplant(id);
     } catch (e) {
       setStatus(`Pipeline failed: ${(e as Error).message}`);
     } finally {
