@@ -56,6 +56,7 @@ export default function App({
   const [exploring, setExploring] = useState<StrategyKind | null>(null);
   const [discussing, setDiscussing] = useState<DiscussKind | null>(null);
   const [running, setRunning] = useState<StrategyKind | null>(null);
+  const [incidentUsed, setIncidentUsed] = useState(false);
   const { events, terminalStage } = usePipelineStream(incidentId);
 
   const pollForTransplant = async (id: string) => {
@@ -135,7 +136,7 @@ export default function App({
     setPlan(null);
     try {
       const d = await api.fireIncident(repoId);
-      setIncidentId(d.incident.id); setOptions(d.options.options); setStatus("Incident open — choose a strategy");
+      setIncidentId(d.incident.id); setOptions(d.options.options); setIncidentUsed(false); setStatus("Incident open — choose a strategy");
     } catch (e) {
       handlePermissionError(e, "Couldn't fire the CVE");
     }
@@ -152,12 +153,19 @@ export default function App({
     );
     try {
       let id = incidentId;
+      // An incident is single-use. If this one already ran, start a fresh one first.
+      if (incidentUsed && repoId) {
+        setStatus("Firing a fresh incident for this run…");
+        const d = await api.fireIncident(repoId);
+        id = d.incident.id;
+        setIncidentId(id);
+        setOptions(d.options.options);
+      }
       try {
         await api.chooseStrategy(id, kind);
       } catch (e) {
-        // An incident is single-use; if this one already ran (terminal), fire a fresh one and retry.
-        if (repoId && /terminal|already/i.test((e as Error).message ?? "")) {
-          setStatus("Previous run finished — firing a fresh incident…");
+        // Safety net: the incident was already consumed — fire a fresh one and retry once.
+        if (repoId && /terminal|transition|already|conflict/i.test((e as Error).message ?? "")) {
           const d = await api.fireIncident(repoId);
           id = d.incident.id;
           setIncidentId(id);
@@ -167,6 +175,7 @@ export default function App({
           throw e;
         }
       }
+      setIncidentUsed(true);
       await pollForTransplant(id);
     } catch (e) {
       setStatus(`Pipeline failed: ${(e as Error).message}`);
