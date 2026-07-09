@@ -346,7 +346,7 @@ function Footer() {
         </div>
         <div className="flex items-center gap-5">
           <span className="inline-flex items-center gap-1.5"><Branch className="h-3.5 w-3.5" /> autonomous transplants</span>
-          <a href="https://github.com" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><Github className="h-4 w-4" /> GitHub</a>
+          <a href="https://github.com/0sha-dow0/cascAIde" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><Github className="h-4 w-4" /> GitHub</a>
         </div>
       </div>
     </footer>
