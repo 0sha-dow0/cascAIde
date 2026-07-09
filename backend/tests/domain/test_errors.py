@@ -25,6 +25,10 @@ import pytest
 
 import backend.domain.errors as errors_module
 from backend.domain.errors import (
+    AdvisoryError,
+    CodeMemoryError,
+    IntegrationNotConnectedError,
+    RepoAccessError,
     AuthError,
     ConfigError,
     DepCoverError,
@@ -72,8 +76,12 @@ EXPECTED_ERROR_CODES: dict[type[DepCoverError], str] = {
     AuthError: "auth_error",
     GitHubError: "github_error",
     RateLimitError: "rate_limit_error",
+    RepoAccessError: "repo_access_error",
+    IntegrationNotConnectedError: "integration_not_connected_error",
     StateTransitionError: "state_transition_error",
     ConfigError: "config_error",
+    AdvisoryError: "advisory_error",
+    CodeMemoryError: "code_memory_error",
 }
 
 ALL_ERROR_CLASSES: tuple[type[DepCoverError], ...] = tuple(EXPECTED_ERROR_CODES.keys())

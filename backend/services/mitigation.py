@@ -45,7 +45,9 @@ _REQUIRED_KINDS: Final[tuple[StrategyKind, ...]] = (
     StrategyKind.TRANSPLANT,
     StrategyKind.ACCEPT_RISK,
 )
-_EXECUTABLE_KIND: Final[StrategyKind] = StrategyKind.TRANSPLANT
+_EXECUTABLE_KINDS: Final[frozenset[StrategyKind]] = frozenset(
+    {StrategyKind.UPGRADE, StrategyKind.TRANSPLANT}
+)
 
 _CTX_FINISH_REASON: Final[str] = "finish_reason"
 _CTX_DETAIL: Final[str] = "detail"
@@ -216,7 +218,7 @@ def _parse_card(
             effort=values[_FIELD_EFFORT],
             blast_radius=values[_FIELD_BLAST_RADIUS],
             residual_risk=values[_FIELD_RESIDUAL_RISK],
-            executable=kind is _EXECUTABLE_KIND,
+            executable=kind in _EXECUTABLE_KINDS,
             rationale=values[_FIELD_RATIONALE],
         )
     )
@@ -286,7 +288,7 @@ class MitigationService:
 
 assert frozenset(_REQUIRED_KINDS) == frozenset(StrategyKind)
 assert len(_REQUIRED_KINDS) == len(set(_REQUIRED_KINDS))
-assert _EXECUTABLE_KIND in _REQUIRED_KINDS
+assert _EXECUTABLE_KINDS <= frozenset(_REQUIRED_KINDS)
 
 
 __all__ = ("MitigationService",)

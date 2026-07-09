@@ -74,6 +74,13 @@ class LlmRole(StrEnum):
     JUDGE_RECIPE = "judge_recipe"
     MITIGATION = "mitigation"
     PR_SCREEN = "pr_screen"
+    EXPLORE = "explore"
+
+
+class RepoAccess(StrEnum):
+    WRITE = "write"
+    READ = "read"
+    NONE = "none"
 
 
 class GraphNodeKind(StrEnum):

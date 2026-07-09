@@ -9,7 +9,12 @@ from backend.services.battery import input_battery
 
 _VICTIM_URL = "https://github.com/depcover/victim-axios"
 _DEMO_TOKEN = "demo-token"
-_DEMO_USER = AuthenticatedUser(id="user-demo", email="demo@depcover.dev")
+_DEMO_USER = AuthenticatedUser(
+    id="user-demo",
+    email="demo@depcover.dev",
+    login="demo",
+    display_name="Demo User",
+)
 
 _PACKAGE_JSON = FileContent(
     path="package.json",

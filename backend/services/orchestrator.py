@@ -400,7 +400,7 @@ class PipelineOrchestrator:
             )
         return self._terminalize(
             running,
-            IncidentStatus.CONTESTED,
+            IncidentStatus.AWAITING_REVIEW,
             PipelineStage.CONTESTED,
             _CONTESTED_MESSAGE,
         )

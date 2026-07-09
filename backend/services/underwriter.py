@@ -7,6 +7,7 @@ from backend.domain.determinism import Clock, IdGenerator
 from backend.domain.enums import SandboxOutcome
 from backend.domain.errors import DepCoverError, Err, Ok, Result, SandboxError
 from backend.domain.models import (
+    Advisory,
     CentralityScore,
     GraphLayout,
     LockfileWarning,
@@ -21,6 +22,7 @@ from backend.ports.sandbox import (
     SandboxResult,
     SandboxRunner,
 )
+from backend.services.cve_scoring import compute_priority
 
 _REPORT_ID_PREFIX: Final[str] = "underwriting"
 
@@ -118,6 +120,7 @@ class Underwriter:
         centrality: Sequence[CentralityScore],
         layout: GraphLayout,
         warnings: Sequence[LockfileWarning],
+        advisories: Sequence[Advisory] = (),
     ) -> Result[UnderwritingReport, DepCoverError]:
         acquired = self._sandbox.acquire(self._settings.daytona_snapshot_id)
         if isinstance(acquired, Err):
@@ -136,6 +139,15 @@ class Underwriter:
         notes = _notes_for_outcome(
             test_result, failing_tests, self._settings.sandbox_exec_timeout_s
         )
+        target_centrality = next(
+            (
+                score.score
+                for score in centrality
+                if score.package == surgery_plan.target_package
+            ),
+            0.0,
+        )
+        priority_score, priority_band = compute_priority(advisories, target_centrality)
         report = UnderwritingReport(
             id=self._ids.new_id(_REPORT_ID_PREFIX),
             repo_id=repo.id,
@@ -146,6 +158,10 @@ class Underwriter:
             graph_layout=layout,
             warnings=tuple(warnings) + notes,
             created_at=self._clock.now(),
+            resolved_version=surgery_plan.target_version,
+            advisories=tuple(advisories),
+            priority_score=priority_score,
+            priority_band=priority_band,
         )
         saved = self._store.save_underwriting(report)
         if isinstance(saved, Err):

@@ -103,7 +103,7 @@ def _collect_strings(settings: Settings) -> list[str]:
 
 def _assert_role_map_complete(settings: Settings) -> None:
     assert frozenset(settings.llm_roles) == frozenset(LlmRole)
-    assert len(settings.llm_roles) == 7
+    assert len(settings.llm_roles) == 8
     for role in LlmRole:
         config = settings.role(role)
         assert isinstance(config, LlmRoleConfig)

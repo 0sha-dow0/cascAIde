@@ -1,3 +1,4 @@
+import path from "path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -12,6 +13,7 @@ const proxy = Object.fromEntries(
 export default defineConfig({
   base: "./",
   plugins: [react()],
+  resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
   server: { port: 5173, proxy },
   build: { outDir: "dist", emptyOutDir: true },
 });

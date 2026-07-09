@@ -84,6 +84,7 @@ class SurgeryPlan(_FrozenModel):
     target_package: str
     call_sites: tuple[CallSite, ...]
     affected_files: tuple[str, ...]
+    target_version: str | None = None
 
     @model_validator(mode="after")
     def _validate_affected_files(self) -> Self:
@@ -107,6 +108,7 @@ class GraphLayoutNode(_FrozenModel):
     y: float
     kind: GraphNodeKind
     label: str
+    impacted: bool = False
 
 
 class GraphLayout(_FrozenModel):
@@ -124,6 +126,19 @@ class LockfileWarning(_FrozenModel):
     reason: str
 
 
+class Advisory(_FrozenModel):
+    ghsa_id: str
+    cve_id: str | None
+    summary: str
+    severity: str
+    cvss_score: float
+    cvss_vector: str | None
+    vulnerable_range: str
+    first_patched: str | None
+    url: str
+    published_at: datetime | None
+
+
 class UnderwritingReport(_FrozenModel):
     id: str
     repo_id: str
@@ -134,6 +149,10 @@ class UnderwritingReport(_FrozenModel):
     graph_layout: GraphLayout
     warnings: tuple[LockfileWarning, ...]
     created_at: datetime
+    resolved_version: str | None = None
+    advisories: tuple[Advisory, ...] = ()
+    priority_score: float = 0.0
+    priority_band: str = "none"
 
 
 class MitigationOption(_FrozenModel):
@@ -149,6 +168,31 @@ class MitigationOption(_FrozenModel):
 class MitigationCardSet(_FrozenModel):
     incident_id: str
     options: tuple[MitigationOption, ...]
+
+
+class MemorySnippet(_FrozenModel):
+    """A chunk of code context recalled from the code-memory (Cognee) store."""
+
+    path: str
+    text: str
+    score: float
+
+
+class PlanStep(_FrozenModel):
+    title: str
+    detail: str
+    file_refs: tuple[str, ...]
+
+
+class ImplementationPlan(_FrozenModel):
+    """A step-by-step plan for implementing a mitigation strategy, grounded in code memory."""
+
+    id: str
+    incident_id: str
+    strategy: StrategyKind
+    summary: str
+    steps: tuple[PlanStep, ...]
+    grounded_files: tuple[str, ...]
 
 
 class Incident(_FrozenModel):
@@ -333,6 +377,7 @@ __all__ = (
     "GraphEdge",
     "CallSite",
     "SurgeryPlan",
+    "Advisory",
     "CentralityScore",
     "GraphLayoutNode",
     "GraphLayout",
@@ -341,6 +386,9 @@ __all__ = (
     "UnderwritingReport",
     "MitigationOption",
     "MitigationCardSet",
+    "MemorySnippet",
+    "PlanStep",
+    "ImplementationPlan",
     "Incident",
     "Recipe",
     "TransplantRequest",

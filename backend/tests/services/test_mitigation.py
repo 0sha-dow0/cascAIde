@@ -205,15 +205,16 @@ def test_happy_path_returns_four_cards_one_per_kind() -> None:
     assert {option.kind for option in card_set.options} == set(StrategyKind)
 
 
-def test_happy_path_only_transplant_is_executable() -> None:
+def test_happy_path_upgrade_and_transplant_are_executable() -> None:
     card_set = _ok(
         _service(_response(_valid_json())).options(_INCIDENT_ID, _report(), _CVE_SUMMARY)
     )
 
+    runnable = {StrategyKind.UPGRADE, StrategyKind.TRANSPLANT}
     for option in card_set.options:
-        assert option.executable == (option.kind is StrategyKind.TRANSPLANT)
-    executable_kinds = [o.kind for o in card_set.options if o.executable]
-    assert executable_kinds == [StrategyKind.TRANSPLANT]
+        assert option.executable == (option.kind in runnable)
+    executable_kinds = {o.kind for o in card_set.options if o.executable}
+    assert executable_kinds == runnable
 
 
 def test_happy_path_blast_radius_and_residual_risk_non_empty() -> None:

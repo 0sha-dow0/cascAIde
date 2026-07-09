@@ -18,9 +18,6 @@ from backend.ports.graph_store import GraphStore, node_attrs_to_call_site
 
 _LEVEL_X_SPACING: Final = 240.0
 _INTRA_LEVEL_Y_SPACING: Final = 120.0
-_TRAVERSABLE_EDGE_KINDS: Final = frozenset(
-    {GraphEdgeKind.IMPORTS, GraphEdgeKind.CALLS}
-)
 
 
 def _edge_sort_key(edge: GraphEdge) -> tuple[str, str, str]:
@@ -108,16 +105,14 @@ class FakeGraphStore(GraphStore):
             )
         )
 
-    def traverse_call_sites(
-        self, target_package: str
-    ) -> Result[tuple[CallSite, ...], GraphError]:
+    def _root_id(self, target_package: str) -> Result[str | None, GraphError]:
         roots = [
             node
             for node in self._nodes.values()
             if node.kind == GraphNodeKind.PACKAGE and node.label == target_package
         ]
         if not roots:
-            return Ok(())
+            return Ok(None)
         if len(roots) > 1:
             return Err(
                 GraphError(
@@ -125,23 +120,60 @@ class FakeGraphStore(GraphStore):
                     {"target_package": target_package, "matches": str(len(roots))},
                 )
             )
-        adjacency = self._traversable_adjacency()
-        visited: set[str] = {roots[0].id}
-        queue: deque[str] = deque([roots[0].id])
+        return Ok(roots[0].id)
+
+    def traverse_call_sites(
+        self, target_package: str
+    ) -> Result[tuple[CallSite, ...], GraphError]:
+        root = self._root_id(target_package)
+        if isinstance(root, Err):
+            return root
+        if root.value is None:
+            return Ok(())
+        importer_ids = {
+            edge.src
+            for edge in self._edges
+            if edge.kind == GraphEdgeKind.IMPORTS
+            and edge.dst == root.value
+            and self._nodes[edge.src].kind == GraphNodeKind.FILE
+        }
         collected: list[CallSite] = []
+        for edge in self._edges:
+            if edge.kind != GraphEdgeKind.CALLS or edge.src not in importer_ids:
+                continue
+            node = self._nodes[edge.dst]
+            if node.kind != GraphNodeKind.CALL_SITE:
+                continue
+            decoded = node_attrs_to_call_site(node.attrs)
+            if isinstance(decoded, Err):
+                return decoded
+            collected.append(decoded.value)
+        return Ok(tuple(sorted(set(collected), key=_call_site_sort_key)))
+
+    def blast_radius(
+        self, target_package: str
+    ) -> Result[frozenset[str], GraphError]:
+        root = self._root_id(target_package)
+        if isinstance(root, Err):
+            return root
+        if root.value is None:
+            return Ok(frozenset())
+        reverse: dict[str, list[str]] = {node_id: [] for node_id in self._nodes}
+        for edge in self._edges:
+            if edge.kind == GraphEdgeKind.IMPORTS:
+                reverse[edge.dst].append(edge.src)
+        visited: set[str] = {root.value}
+        queue: deque[str] = deque([root.value])
+        impacted: set[str] = set()
         while queue:
             current_id = queue.popleft()
-            current = self._nodes[current_id]
-            if current.kind == GraphNodeKind.CALL_SITE:
-                decoded = node_attrs_to_call_site(current.attrs)
-                if isinstance(decoded, Err):
-                    return decoded
-                collected.append(decoded.value)
-            for neighbor_id in adjacency[current_id]:
-                if neighbor_id not in visited:
-                    visited.add(neighbor_id)
-                    queue.append(neighbor_id)
-        return Ok(tuple(sorted(set(collected), key=_call_site_sort_key)))
+            for src_id in reverse[current_id]:
+                if src_id not in visited:
+                    visited.add(src_id)
+                    queue.append(src_id)
+                    if self._nodes[src_id].kind == GraphNodeKind.FILE:
+                        impacted.add(src_id)
+        return Ok(frozenset(impacted))
 
     def layout(self) -> Result[GraphLayout, GraphError]:
         if not self._nodes:
@@ -171,15 +203,6 @@ class FakeGraphStore(GraphStore):
             degree[edge.src] += 1
             degree[edge.dst] += 1
         return degree
-
-    def _traversable_adjacency(self) -> dict[str, list[str]]:
-        adjacency: dict[str, list[str]] = {node_id: [] for node_id in self._nodes}
-        for edge in self._edges:
-            if edge.kind in _TRAVERSABLE_EDGE_KINDS:
-                adjacency[edge.src].append(edge.dst)
-        for neighbors in adjacency.values():
-            neighbors.sort()
-        return adjacency
 
     def _bfs_levels(self) -> dict[str, int]:
         sorted_ids = sorted(self._nodes)

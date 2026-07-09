@@ -22,7 +22,11 @@ _CODE_STATUS: dict[str, int] = {
     "auth_error": 401,
     "github_error": 502,
     "rate_limit_error": 429,
+    "repo_access_error": 403,
+    "integration_not_connected_error": 409,
     "state_transition_error": 409,
+    "advisory_error": 502,
+    "code_memory_error": 502,
     "depcover_error": 500,
 }
 

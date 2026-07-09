@@ -16,8 +16,22 @@ export interface SurgeryPlan {
   target_package: string;
   call_sites: CallSite[];
   affected_files: string[];
+  target_version: string | null;
 }
-export interface GraphNode { id: string; x: number; y: number; kind: NodeKind; label: string; }
+export type Severity = "critical" | "high" | "medium" | "moderate" | "low" | "unknown";
+export interface Advisory {
+  ghsa_id: string;
+  cve_id: string | null;
+  summary: string;
+  severity: string;
+  cvss_score: number;
+  cvss_vector: string | null;
+  vulnerable_range: string;
+  first_patched: string | null;
+  url: string;
+  published_at: string | null;
+}
+export interface GraphNode { id: string; x: number; y: number; kind: NodeKind; label: string; impacted: boolean; }
 export interface GraphEdge { src: string; dst: string; kind: string; }
 export interface GraphLayout { nodes: GraphNode[]; edges: GraphEdge[]; }
 export interface Centrality { package: string; score: number; }
@@ -28,6 +42,10 @@ export interface UnderwritingReport {
   centrality: Centrality[];
   warnings: Warning[];
   target_package: string;
+  resolved_version: string | null;
+  advisories: Advisory[];
+  priority_score: number;
+  priority_band: string;
 }
 export interface Repo { id: string; url: string; owner: string; registered_at: string; }
 export interface RegisterRepoResponse {
@@ -51,3 +69,8 @@ export interface ConsensusResult { approvals: number; panel_size: number; approv
 export interface Transplant { id: string; incident_id: string; diff: FileDiff[]; consensus: ConsensusResult; }
 export interface PullRequestRef { number: number; url: string; }
 export interface ReviewResponse { status: IncidentStatus; pull_request: PullRequestRef | null; }
+export interface PlanStep { title: string; detail: string; file_refs: string[]; }
+export interface ImplementationPlan {
+  id: string; incident_id: string; strategy: StrategyKind;
+  summary: string; steps: PlanStep[]; grounded_files: string[];
+}

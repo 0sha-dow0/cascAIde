@@ -29,8 +29,11 @@ ENV_NEO4J_USER: Final[str] = f"{ENV_PREFIX}NEO4J_USER"
 ENV_NEO4J_PASSWORD_ENV: Final[str] = f"{ENV_PREFIX}NEO4J_PASSWORD_ENV"
 ENV_BUTTERBASE_BASE_URL: Final[str] = f"{ENV_PREFIX}BUTTERBASE_BASE_URL"
 ENV_BUTTERBASE_KEY_ENV: Final[str] = f"{ENV_PREFIX}BUTTERBASE_KEY_ENV"
+ENV_BUTTERBASE_APP_ID: Final[str] = f"{ENV_PREFIX}BUTTERBASE_APP_ID"
 ENV_GITHUB_TOKEN_ENV: Final[str] = f"{ENV_PREFIX}GITHUB_TOKEN_ENV"
 ENV_GITHUB_POLL_INTERVAL_S: Final[str] = f"{ENV_PREFIX}GITHUB_POLL_INTERVAL_S"
+ENV_COGNEE_BASE_URL: Final[str] = f"{ENV_PREFIX}COGNEE_BASE_URL"
+ENV_COGNEE_API_KEY_ENV: Final[str] = f"{ENV_PREFIX}COGNEE_API_KEY_ENV"
 
 ENV_SUFFIX_BASE_URL: Final[str] = "BASE_URL"
 ENV_SUFFIX_MODEL: Final[str] = "MODEL"
@@ -87,8 +90,11 @@ class Settings(_FrozenModel):
     sandbox_acquire_timeout_s: PositiveFloat
     butterbase_base_url: str | None
     butterbase_key_env: str | None
+    butterbase_app_id: str | None
     github_token_env: str | None
     github_poll_interval_s: GithubPollIntervalS
+    cognee_base_url: str | None
+    cognee_api_key_env: str | None
     llm_roles: Mapping[LlmRole, LlmRoleConfig]
     judges_degraded: bool
 
@@ -212,8 +218,11 @@ def _construct_settings(
     sandbox_acquire_timeout_s: float,
     butterbase_base_url: str | None,
     butterbase_key_env: str | None,
+    butterbase_app_id: str | None,
     github_token_env: str | None,
     github_poll_interval_s: float,
+    cognee_base_url: str | None,
+    cognee_api_key_env: str | None,
     llm_roles: Mapping[LlmRole, LlmRoleConfig],
     judges_degraded: bool,
 ) -> Result[Settings, ConfigError]:
@@ -228,8 +237,11 @@ def _construct_settings(
             sandbox_acquire_timeout_s=sandbox_acquire_timeout_s,
             butterbase_base_url=butterbase_base_url,
             butterbase_key_env=butterbase_key_env,
+            butterbase_app_id=butterbase_app_id,
             github_token_env=github_token_env,
             github_poll_interval_s=github_poll_interval_s,
+            cognee_base_url=cognee_base_url,
+            cognee_api_key_env=cognee_api_key_env,
             llm_roles=llm_roles,
             judges_degraded=judges_degraded,
         )
@@ -318,8 +330,11 @@ def _fake_settings(judges_degraded: bool) -> Result[Settings, ConfigError]:
         sandbox_acquire_timeout_s=DEFAULT_SANDBOX_ACQUIRE_TIMEOUT_S,
         butterbase_base_url=None,
         butterbase_key_env=None,
+        butterbase_app_id=None,
         github_token_env=None,
         github_poll_interval_s=DEFAULT_GITHUB_POLL_INTERVAL_S,
+        cognee_base_url=None,
+        cognee_api_key_env=None,
         llm_roles=roles_result.value,
         judges_degraded=judges_degraded,
     )
@@ -359,8 +374,11 @@ def _live_settings(
         sandbox_acquire_timeout_s=acquire_timeout_result.value,
         butterbase_base_url=_optional_str(env, ENV_BUTTERBASE_BASE_URL),
         butterbase_key_env=_optional_str(env, ENV_BUTTERBASE_KEY_ENV),
+        butterbase_app_id=_optional_str(env, ENV_BUTTERBASE_APP_ID),
         github_token_env=_optional_str(env, ENV_GITHUB_TOKEN_ENV),
         github_poll_interval_s=poll_interval_result.value,
+        cognee_base_url=_optional_str(env, ENV_COGNEE_BASE_URL),
+        cognee_api_key_env=_optional_str(env, ENV_COGNEE_API_KEY_ENV),
         llm_roles=roles_result.value,
         judges_degraded=judges_degraded,
     )

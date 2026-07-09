@@ -40,6 +40,7 @@ _OP_RESET: Final = "reset"
 _OP_LOAD: Final = "load"
 _OP_CENTRALITY: Final = "centrality"
 _OP_TRAVERSE: Final = "traverse_call_sites"
+_OP_BLAST_RADIUS: Final = "blast_radius"
 _OP_LAYOUT: Final = "layout"
 
 _FIELD_KEY: Final = "field"
@@ -52,6 +53,7 @@ _REL_TYPE_CALLS: Final = "CALLS"
 _REL_TYPE_DEPENDS_ON: Final = "DEPENDS_ON"
 
 _PACKAGE_KIND: Final = GraphNodeKind.PACKAGE.value
+_FILE_KIND: Final = GraphNodeKind.FILE.value
 _CALL_SITE_KIND: Final = GraphNodeKind.CALL_SITE.value
 
 _EDGE_KIND_BY_REL_TYPE: Final[Mapping[str, GraphEdgeKind]] = MappingProxyType(
@@ -115,9 +117,14 @@ RETURN p.id AS id
 """
 
 _TRAVERSE_CALL_SITES_CYPHER: Final = """
-MATCH (root:GraphNode {id: $root_id})-[:IMPORTS|CALLS*1..]->(cs:GraphNode)
+MATCH (root:GraphNode {id: $root_id})<-[:IMPORTS]-(f:GraphNode)-[:CALLS]->(cs:GraphNode)
 WHERE cs.kind = $call_site_kind
 RETURN DISTINCT cs.attr_keys AS attr_keys, cs.attr_values AS attr_values
+"""
+
+_BLAST_RADIUS_CYPHER: Final = """
+MATCH (vuln:GraphNode {kind: $package_kind, label: $target})<-[:IMPORTS*1..]-(f:GraphNode {kind: $file_kind})
+RETURN DISTINCT f.id AS id
 """
 
 
@@ -284,6 +291,18 @@ def _traverse_read_tx(tx: ManagedTransaction, target: str) -> _TraverseRead:
         values = _require_str_list(record[_PROP_ATTR_VALUES], _PROP_ATTR_VALUES)
         attr_maps.append(_zip_attrs(keys, values, _PROP_ATTR_VALUES))
     return _TraverseRead(root_count=1, attr_maps=tuple(attr_maps))
+
+
+def _blast_radius_read_tx(tx: ManagedTransaction, target: str) -> frozenset[str]:
+    return frozenset(
+        _require_str(record[_PROP_ID], _PROP_ID)
+        for record in tx.run(
+            _BLAST_RADIUS_CYPHER,
+            package_kind=_PACKAGE_KIND,
+            file_kind=_FILE_KIND,
+            target=target,
+        )
+    )
 
 
 def _degree_by_node(
@@ -483,6 +502,23 @@ class LiveGraphStore(GraphStore):
                 return decoded
             collected.append(decoded.value)
         return Ok(tuple(sorted(set(collected), key=_call_site_sort_key)))
+
+    def blast_radius(
+        self, target_package: str
+    ) -> Result[frozenset[str], GraphError]:
+        try:
+            with self._driver.session(database=self._database) as session:
+                ids = session.execute_read(_blast_radius_read_tx, target_package)
+        except (Neo4jError, DriverError):
+            return Err(GraphError(_NEO4J_FAILURE_MESSAGE, {_OP_KEY: _OP_BLAST_RADIUS}))
+        except _MalformedGraphDataError as error:
+            return Err(
+                GraphError(
+                    _MALFORMED_MESSAGE,
+                    {_FIELD_KEY: error.field, _OP_KEY: _OP_BLAST_RADIUS},
+                )
+            )
+        return Ok(ids)
 
     def layout(self) -> Result[GraphLayout, GraphError]:
         try:

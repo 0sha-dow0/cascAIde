@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from backend.domain.determinism import Clock, IdGenerator
 from backend.domain.errors import DepCoverError, Err, Ok, Result
 from backend.domain.models import (
@@ -11,7 +13,7 @@ from backend.ports.record_store import RecordStore
 from backend.ports.repo_content import RepoContentProvider
 from backend.services.call_site_scanner import scan_call_sites
 from backend.services.graph_builder import GraphBuilder
-from backend.services.manifest_parser import parse_manifest
+from backend.services.manifest_parser import DependencyEntry, parse_manifest
 
 type ScanOutcome = tuple[
     SurgeryPlan,
@@ -19,6 +21,25 @@ type ScanOutcome = tuple[
     tuple[CentralityScore, ...],
     tuple[LockfileWarning, ...],
 ]
+
+_SPEC_OPERATORS: str = "^~>=<v "
+
+
+def _clean_spec(version_spec: str) -> str | None:
+    tokens = version_spec.strip().split()
+    if not tokens:
+        return None
+    cleaned = tokens[0].lstrip(_SPEC_OPERATORS).strip()
+    return cleaned or None
+
+
+def _target_version(
+    dependencies: Sequence[DependencyEntry], target_package: str
+) -> str | None:
+    for dependency in dependencies:
+        if dependency.name == target_package:
+            return dependency.resolved or _clean_spec(dependency.version_spec)
+    return None
 
 
 class IngestionService:
@@ -60,12 +81,17 @@ class IngestionService:
         if isinstance(call_sites, Err):
             return Err(call_sites.error)
 
-        built = self._builder.build(
-            parsed.value.dependencies, files, call_sites.value, target_package
-        )
+        built = self._builder.build(files, call_sites.value, target_package)
         if isinstance(built, Err):
             return Err(built.error)
         surgery_plan, centrality, layout = built.value
+        surgery_plan = surgery_plan.model_copy(
+            update={
+                "target_version": _target_version(
+                    parsed.value.dependencies, target_package
+                )
+            }
+        )
 
         persisted = self._store.create_repo(repo)
         if isinstance(persisted, Err):

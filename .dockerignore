@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+*.pyc
+*.log
+.env
+.env.*
+!.env.example
+backend/.venv
+frontend/node_modules
+frontend/dist
+PRD_dependency_transplant_engine.md

@@ -44,6 +44,10 @@ class GraphStore(Protocol):
         self, target_package: str
     ) -> Result[tuple[CallSite, ...], GraphError]: ...
 
+    def blast_radius(
+        self, target_package: str
+    ) -> Result[frozenset[str], GraphError]: ...
+
     def layout(self) -> Result[GraphLayout, GraphError]: ...
 
 

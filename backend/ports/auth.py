@@ -10,6 +10,9 @@ from backend.domain.errors import AuthError, Result
 class AuthenticatedUser:
     id: str
     email: str
+    login: str | None = None
+    display_name: str | None = None
+    avatar_url: str | None = None
 
 
 class AuthProvider(Protocol):

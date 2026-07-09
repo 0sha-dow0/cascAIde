@@ -1,0 +1,270 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Palette — "Transplant Teal" (2026 direction):
+  teal = the tool's actions (brand), rose = the threat (CVEs), emerald = the cured
+  state, amber = caution. A violet -> cyan gradient is the signature brand mark.
+*/
+:root {
+  --font-sans: "Inter Variable";
+  --font-display: "Outfit Variable";
+  --font-mono: "JetBrains Mono Variable";
+  --radius: 0.75rem;
+
+  --background: 200 33% 99%;
+  --foreground: 200 30% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 200 30% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 200 30% 11%;
+  --primary: 189 92% 33%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 197 33% 95%;
+  --secondary-foreground: 200 26% 24%;
+  --muted: 197 33% 95%;
+  --muted-foreground: 200 12% 44%;
+  --accent: 186 62% 93%;
+  --accent-foreground: 190 85% 25%;
+  --destructive: 349 80% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 200 24% 89%;
+  --input: 200 24% 87%;
+  --ring: 189 92% 38%;
+  --success: 158 74% 37%;
+  --success-foreground: 158 50% 97%;
+  --warning: 32 94% 44%;
+  --warning-foreground: 40 90% 97%;
+  --critical: 349 80% 52%;
+  --grad-from: 262 83% 66%;
+  --grad-to: 190 95% 42%;
+}
+
+.dark {
+  --background: 200 42% 6%;
+  --foreground: 190 22% 96%;
+  --card: 200 34% 9%;
+  --card-foreground: 190 22% 96%;
+  --popover: 200 34% 10%;
+  --popover-foreground: 190 22% 96%;
+  --primary: 186 76% 52%;
+  --primary-foreground: 200 44% 7%;
+  --secondary: 200 26% 15%;
+  --secondary-foreground: 190 20% 92%;
+  --muted: 200 26% 15%;
+  --muted-foreground: 195 15% 62%;
+  --accent: 190 45% 19%;
+  --accent-foreground: 186 72% 80%;
+  --destructive: 349 82% 62%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 200 22% 18%;
+  --input: 200 22% 22%;
+  --ring: 186 76% 55%;
+  --success: 158 66% 52%;
+  --success-foreground: 158 42% 9%;
+  --warning: 38 94% 58%;
+  --warning-foreground: 40 60% 10%;
+  --critical: 349 82% 62%;
+  --grad-from: 262 85% 72%;
+  --grad-to: 189 92% 55%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground;
+  }
+  .tnums {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Signature violet -> cyan gradient */
+  .grad-brand {
+    background-image: linear-gradient(135deg, hsl(var(--grad-from)), hsl(var(--grad-to)));
+  }
+  .grad-text {
+    background-image: linear-gradient(120deg, hsl(var(--grad-from)), hsl(var(--grad-to)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .grad-ring {
+    background:
+      linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+      linear-gradient(135deg, hsl(var(--grad-from)), hsl(var(--grad-to))) border-box;
+    border: 1px solid transparent;
+  }
+}
+
+/* Dependency graph — SVG references tokens directly via these classes */
+.g-edge {
+  stroke: hsl(var(--border));
+  fill: none;
+}
+.g-edge-depends_on {
+  stroke: hsl(var(--border));
+  stroke-dasharray: 3 3;
+}
+.g-node-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.g-arrow {
+  fill: hsl(var(--muted-foreground) / 0.6);
+}
+.vuln-ring {
+  fill: none;
+  stroke: hsl(var(--critical));
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse-ring 1.8s cubic-bezier(0.2, 0.6, 0.2, 1) infinite;
+}
+@keyframes pulse-ring {
+  0% {
+    r: 26px;
+    opacity: 0.5;
+  }
+  70% {
+    r: 44px;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.diff-add {
+  color: hsl(var(--success));
+  background: hsl(var(--success) / 0.09);
+  display: block;
+}
+.diff-del {
+  color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 0.09);
+  display: block;
+}
+.diff-hd {
+  color: hsl(var(--muted-foreground));
+  display: block;
+}
+
+/* ===== Landing page motion ===== */
+@keyframes la-flow {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+@keyframes la-halo {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.5;
+  }
+  70% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes la-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@keyframes la-pan {
+  to {
+    background-position: 200% center;
+  }
+}
+@keyframes la-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.la-flow {
+  stroke-dasharray: 4 7;
+  animation: la-flow 1s linear infinite;
+}
+.la-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: la-halo 2.6s cubic-bezier(0.2, 0.6, 0.2, 1) infinite;
+}
+.la-float {
+  animation: la-float 7s ease-in-out infinite;
+}
+.la-blink {
+  animation: la-blink 1.1s steps(2, jump-none) infinite;
+}
+.la-sheen {
+  background-image: linear-gradient(
+    110deg,
+    hsl(var(--grad-from)),
+    hsl(var(--grad-to)),
+    hsl(var(--grad-from))
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: la-pan 6s linear infinite;
+}
+.grid-fade {
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.6) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.6) 1px, transparent 1px);
+  background-size: 34px 34px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 78%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 78%);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.toast-in {
+  animation: toast-in 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vuln-ring,
+  .animate-fade-rise,
+  .animate-pulse-ring,
+  .toast-in,
+  .la-flow,
+  .la-halo,
+  .la-float,
+  .la-blink,
+  .la-sheen,
+  [class*="animate-"] {
+    animation: none !important;
+  }
+}

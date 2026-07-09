@@ -1,3 +1,4 @@
+import re
 from typing import Final
 
 from backend.domain.enums import LlmRole
@@ -17,8 +18,11 @@ from backend.ports.llm import LlmClientFactory, LlmRequest
 from backend.services.transplant_prompt import build_transplant_messages
 
 _TRANSPLANT_TEMPERATURE: Final[float] = 0.0
-_TRANSPLANT_MAX_TOKENS: Final[int] = 8192
+_TRANSPLANT_MAX_TOKENS: Final[int] = 4096
 _TRUNCATED_FINISH_REASON: Final = "length"
+_BLOCK_RE: Final = re.compile(
+    r'<rewritten_file\s+path="([^"]*)"\s*>(.*?)</rewritten_file>', re.DOTALL
+)
 
 _NEWLINE: Final[str] = "\n"
 _OPEN_PREFIX: Final[str] = '<rewritten_file path="'
@@ -70,54 +74,46 @@ def _by_path(file: RewrittenFile) -> str:
 def _parse_rewritten_files(
     text: str,
 ) -> Result[tuple[RewrittenFile, ...], LlmMalformedOutputError]:
-    lines = text.split(_NEWLINE)
-    total = len(lines)
     collected: list[RewrittenFile] = []
-    index = 0
-    while index < total:
-        path = _open_marker_path(lines[index])
-        if path is None:
-            index += 1
-            continue
-        index += 1
-        body_start = index
-        while index < total and lines[index] != _CLOSE_MARKER:
-            index += 1
-        if index >= total:
-            return Err(
-                LlmMalformedOutputError(_UNCLOSED_MESSAGE, {_CTX_PATH: path})
-            )
-        body = _NEWLINE.join(lines[body_start:index])
+    for match in _BLOCK_RE.finditer(text):
+        path = match.group(1).strip()
+        body = match.group(2)
+        if body.startswith(_NEWLINE):
+            body = body[len(_NEWLINE) :]
+        if body.endswith(_NEWLINE):
+            body = body[: -len(_NEWLINE)]
         collected.append(RewrittenFile(path=path, text=body))
-        index += 1
     return Ok(tuple(collected))
 
 
-def _validate_paths(
+def _normalize(path: str) -> str:
+    stripped = path.strip()
+    while stripped.startswith("./"):
+        stripped = stripped[2:]
+    return stripped.lstrip("/")
+
+
+def _reconcile_files(
     files: tuple[RewrittenFile, ...], request: TransplantRequest
-) -> Result[None, LlmMalformedOutputError]:
-    emitted = [file.path for file in files]
-    present = set(emitted)
-    if len(present) != len(emitted):
-        duplicated = sorted(path for path in present if emitted.count(path) > 1)
-        return Err(
-            LlmMalformedOutputError(
-                _DUPLICATE_MESSAGE,
-                {_CTX_DUPLICATED: _format_paths(duplicated)},
-            )
-        )
-    expected = {file.path for file in request.files}
-    if present != expected:
+) -> Result[tuple[RewrittenFile, ...], LlmMalformedOutputError]:
+    canonical_by_norm = {_normalize(file.path): file.path for file in request.files}
+    matched: dict[str, RewrittenFile] = {}
+    for file in files:
+        canonical = canonical_by_norm.get(_normalize(file.path))
+        if canonical is None:
+            continue
+        matched[canonical] = RewrittenFile(path=canonical, text=file.text)
+    if not matched:
         return Err(
             LlmMalformedOutputError(
                 _MISMATCH_MESSAGE,
                 {
-                    _CTX_MISSING: _format_paths(sorted(expected - present)),
-                    _CTX_EXTRA: _format_paths(sorted(present - expected)),
+                    _CTX_EXTRA: _format_paths(sorted({file.path for file in files})),
+                    _CTX_MISSING: _format_paths(sorted(canonical_by_norm.values())),
                 },
             )
         )
-    return Ok(None)
+    return Ok(tuple(sorted(matched.values(), key=_by_path)))
 
 
 class TransplantAgent:
@@ -153,14 +149,13 @@ class TransplantAgent:
         parse_result = _parse_rewritten_files(response.text)
         if isinstance(parse_result, Err):
             return Err(parse_result.error)
-        validation = _validate_paths(parse_result.value, request)
-        if isinstance(validation, Err):
-            return Err(validation.error)
-        ordered = tuple(sorted(parse_result.value, key=_by_path))
+        reconciled = _reconcile_files(parse_result.value, request)
+        if isinstance(reconciled, Err):
+            return Err(reconciled.error)
         return Ok(
             TransplantOutput(
                 attempt=attempt,
-                files=ordered,
+                files=reconciled.value,
                 raw_model_text=response.text,
             )
         )

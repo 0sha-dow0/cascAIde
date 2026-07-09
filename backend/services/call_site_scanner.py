@@ -379,3 +379,34 @@ def scan_call_sites(
     for file in files:
         collected.extend(_scan_file(file, target_package, canonical))
     return Ok(_dedupe_and_sort(collected))
+
+
+@dataclass(frozen=True)
+class ImportRef:
+    from_path: str
+    specifier: str
+
+
+_IMPORT_PATTERNS = (_REQUIRE_RE, _ESM_FROM_RE, _ESM_BARE_RE)
+
+
+def scan_imports(files: Sequence[FileContent]) -> tuple[ImportRef, ...]:
+    """Every import specifier per file (relative paths + bare packages), string/comment aware.
+
+    Reuses the same require/import lexer as ``scan_call_sites`` but drops the
+    target-package filter, so it yields the whole module import graph.
+    """
+    refs: list[ImportRef] = []
+    for file in files:
+        text = file.text
+        is_code = _classify(text)
+        seen: set[str] = set()
+        for pattern in _IMPORT_PATTERNS:
+            for match in pattern.finditer(text):
+                if not is_code[match.start("kw")]:
+                    continue
+                specifier = match.group("spec")
+                if specifier and specifier not in seen:
+                    seen.add(specifier)
+                    refs.append(ImportRef(from_path=file.path, specifier=specifier))
+    return tuple(refs)

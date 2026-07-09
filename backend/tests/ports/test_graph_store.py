@@ -1,15 +1,15 @@
 """Tests for Unit 7: GraphStore port + FakeGraphStore.
 
-Every test graph is built from the coder's canonical encoding: PACKAGE nodes,
-CALL_SITE nodes whose ``attrs`` come from ``call_site_to_node_attrs``, and
-IMPORTS/CALLS edges that point AWAY from the package toward using code (traverse
-follows them forward). No hand-written attr strings are used for well-formed
-graphs; the single malformed-attrs case deliberately corrupts one field of an
-otherwise-canonical encoding to exercise the decode-error path.
+Every test graph uses the canonical encoding: FILE nodes IMPORT the target
+PACKAGE (``file -IMPORTS-> package``) and CALL their sites (``file -CALLS->
+call_site``). ``traverse_call_sites`` returns the call sites of files that import
+the target. No hand-written attr strings are used for well-formed graphs; the
+single malformed-attrs case deliberately corrupts one field of an otherwise-
+canonical encoding to exercise the decode-error path.
 
 Coverage maps to the must-cover cases:
 
-* Aliased chain ``Package -IMPORTS-> CS(is_aliased) -CALLS-> CS(usage)`` — the
+* Aliased chain (``file -IMPORTS-> axios`` + ``file -CALLS-> CS(usage)``) — the
   alias usage whose snippet lacks the literal "axios" is still returned (case 1).
 * Deterministic traverse ordering (file then line) and no duplicates, including a
   diamond where a call site is reachable via two paths (cases 1, 2).
@@ -72,6 +72,10 @@ def _pkg(node_id: str, label: str) -> GraphNode:
     )
 
 
+def _file(node_id: str, path: str) -> GraphNode:
+    return GraphNode(id=node_id, kind=GraphNodeKind.FILE, label=path, attrs={})
+
+
 def _cs_node(node_id: str, call_site: CallSite) -> GraphNode:
     return GraphNode(
         id=node_id,
@@ -119,12 +123,14 @@ def test_aliased_chain_traverse_includes_alias_usage_without_literal() -> None:
 
     nodes = [
         _pkg("pkg_axios", "axios"),
+        _file("file_client", "src/client.js"),
         _cs_node("cs_alias", alias_binding),
         _cs_node("cs_usage", alias_usage),
     ]
     edges = [
-        _edge("pkg_axios", "cs_alias", GraphEdgeKind.IMPORTS),
-        _edge("cs_alias", "cs_usage", GraphEdgeKind.CALLS),
+        _edge("file_client", "pkg_axios", GraphEdgeKind.IMPORTS),
+        _edge("file_client", "cs_alias", GraphEdgeKind.CALLS),
+        _edge("file_client", "cs_usage", GraphEdgeKind.CALLS),
     ]
     store = _fresh(nodes, edges)
 
@@ -158,14 +164,18 @@ def test_traverse_orders_by_file_then_line_not_by_visit_order() -> None:
     )
     nodes = [
         _pkg("p", "axios"),
+        _file("file_z", "z.js"),
+        _file("file_a", "a.js"),
         _cs_node("a_node", cs_a),
         _cs_node("b_node", cs_b),
         _cs_node("c_node", cs_c),
     ]
     edges = [
-        _edge("p", "a_node", GraphEdgeKind.IMPORTS),
-        _edge("p", "b_node", GraphEdgeKind.IMPORTS),
-        _edge("p", "c_node", GraphEdgeKind.IMPORTS),
+        _edge("file_z", "p", GraphEdgeKind.IMPORTS),
+        _edge("file_a", "p", GraphEdgeKind.IMPORTS),
+        _edge("file_z", "a_node", GraphEdgeKind.CALLS),  # cs_a lives in z.js
+        _edge("file_a", "b_node", GraphEdgeKind.CALLS),
+        _edge("file_a", "c_node", GraphEdgeKind.CALLS),
     ]
     store = _fresh(nodes, edges)
 
@@ -188,15 +198,22 @@ def test_traverse_diamond_yields_no_duplicate_call_sites() -> None:
     )
     nodes = [
         _pkg("p", "axios"),
+        _file("file_a", "src/a.js"),
+        _file("file_b", "src/b.js"),
+        _file("file_z", "src/z.js"),
         _cs_node("c1", cs_x),
         _cs_node("c2", cs_y),
         _cs_node("shared", cs_shared),
     ]
+    # Diamond: cs_shared is reachable via CALLS from two importer files -> deduped.
     edges = [
-        _edge("p", "c1", GraphEdgeKind.IMPORTS),
-        _edge("p", "c2", GraphEdgeKind.IMPORTS),
-        _edge("c1", "shared", GraphEdgeKind.CALLS),
-        _edge("c2", "shared", GraphEdgeKind.CALLS),
+        _edge("file_a", "p", GraphEdgeKind.IMPORTS),
+        _edge("file_b", "p", GraphEdgeKind.IMPORTS),
+        _edge("file_z", "p", GraphEdgeKind.IMPORTS),
+        _edge("file_a", "c1", GraphEdgeKind.CALLS),
+        _edge("file_b", "c2", GraphEdgeKind.CALLS),
+        _edge("file_a", "shared", GraphEdgeKind.CALLS),
+        _edge("file_z", "shared", GraphEdgeKind.CALLS),
     ]
     store = _fresh(nodes, edges)
 
@@ -239,11 +256,15 @@ def test_traverse_malformed_call_site_attrs_returns_err() -> None:
     corrupt[CALL_SITE_LINE_ATTR] = "not-an-int"
     nodes = [
         _pkg("p", "axios"),
+        _file("file_a", "src/a.js"),
         GraphNode(
             id="cs", kind=GraphNodeKind.CALL_SITE, label="cs", attrs=corrupt
         ),
     ]
-    edges = [_edge("p", "cs", GraphEdgeKind.IMPORTS)]
+    edges = [
+        _edge("file_a", "p", GraphEdgeKind.IMPORTS),
+        _edge("file_a", "cs", GraphEdgeKind.CALLS),
+    ]
     store = _fresh(nodes, edges)
     error = _expect_err(store.traverse_call_sites("axios"))
     assert isinstance(error, GraphError)
@@ -301,8 +322,11 @@ def test_dangling_edge_leaves_prior_state_unchanged() -> None:
         file_path="src/a.js", line=7, symbol="get", is_aliased=False,
         alias=None, snippet="axios.get(x)",
     )
-    good_nodes = [_pkg("p", "axios"), _cs_node("cs", cs)]
-    good_edges = [_edge("p", "cs", GraphEdgeKind.IMPORTS)]
+    good_nodes = [_pkg("p", "axios"), _file("file_a", "src/a.js"), _cs_node("cs", cs)]
+    good_edges = [
+        _edge("file_a", "p", GraphEdgeKind.IMPORTS),
+        _edge("file_a", "cs", GraphEdgeKind.CALLS),
+    ]
     store = _fresh(good_nodes, good_edges)
 
     centrality_before = store.centrality()
@@ -578,9 +602,13 @@ def test_reload_fully_replaces_prior_graph() -> None:
         file_path="a.js", line=1, symbol="s", is_aliased=False,
         alias=None, snippet="s()",
     )
-    store = _fresh([_pkg("p", "axios"), _cs_node("cs", cs)], [
-        _edge("p", "cs", GraphEdgeKind.IMPORTS)
-    ])
+    store = _fresh(
+        [_pkg("p", "axios"), _file("file_a", "a.js"), _cs_node("cs", cs)],
+        [
+            _edge("file_a", "p", GraphEdgeKind.IMPORTS),
+            _edge("file_a", "cs", GraphEdgeKind.CALLS),
+        ],
+    )
     assert _unwrap(store.traverse_call_sites("axios")) == (cs,)
 
     _unwrap(store.reset())

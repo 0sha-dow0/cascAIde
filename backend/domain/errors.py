@@ -74,12 +74,28 @@ class RateLimitError(GitHubError):
     code: ClassVar[str] = "rate_limit_error"
 
 
+class RepoAccessError(GitHubError):
+    code: ClassVar[str] = "repo_access_error"
+
+
+class IntegrationNotConnectedError(GitHubError):
+    code: ClassVar[str] = "integration_not_connected_error"
+
+
 class StateTransitionError(DepCoverError):
     code: ClassVar[str] = "state_transition_error"
 
 
 class ConfigError(DepCoverError):
     code: ClassVar[str] = "config_error"
+
+
+class AdvisoryError(DepCoverError):
+    code: ClassVar[str] = "advisory_error"
+
+
+class CodeMemoryError(DepCoverError):
+    code: ClassVar[str] = "code_memory_error"
 
 
 def _collect_error_classes(root: type[DepCoverError]) -> list[type[DepCoverError]]:

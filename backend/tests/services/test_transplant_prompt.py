@@ -185,7 +185,7 @@ def test_system_message_states_the_transplant_rules() -> None:
     assert "non-2xx" in text
     assert "parses the JSON body" in text
     # axios -> fetch migration.
-    assert "Replace axios usage with fetch" in text
+    assert "Replace ALL axios usage with fetch" in text
     assert "axios" in text
     assert "fetch" in text
 

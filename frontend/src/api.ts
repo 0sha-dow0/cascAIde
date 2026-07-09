@@ -1,26 +1,53 @@
 import type {
-  FireIncidentResponse, RegisterRepoResponse, ReviewResponse, StrategyKind, Transplant,
+  FireIncidentResponse, ImplementationPlan, RegisterRepoResponse,
+  ReviewResponse, StrategyKind, Transplant,
 } from "./types";
 
-const TOKEN = "demo-token";
-const headers = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
+export type DiscussKind = "issue" | "discussion";
+export interface DiscussResult { kind: DiscussKind; number: number | null; url: string; }
+
+import { bearerToken, clearSession, getSession, refreshSession } from "./session";
+
+function authHeaders(): Record<string, string> {
+  return { Authorization: `Bearer ${bearerToken()}`, "Content-Type": "application/json" };
+}
+
+async function request<T>(path: string, init: RequestInit): Promise<T> {
+  let res = await fetch(path, { ...init, headers: authHeaders() });
+  if (res.status === 401 && getSession()) {
+    // Access token likely expired — refresh once and retry, else drop the session.
+    if (await refreshSession()) {
+      res = await fetch(path, { ...init, headers: authHeaders() });
+    } else {
+      clearSession();
+      window.location.hash = "";
+    }
+  }
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) throw await toError(res);
-  return (await res.json()) as T;
+  return request<T>(path, { method: "POST", body: JSON.stringify(body) });
 }
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers });
-  if (!res.ok) throw await toError(res);
-  return (await res.json()) as T;
+  return request<T>(path, { method: "GET" });
 }
-async function toError(res: Response): Promise<Error> {
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function toError(res: Response): Promise<ApiError> {
   try {
     const body = (await res.json()) as { detail?: { message?: string }; message?: string };
-    return new Error(body.detail?.message ?? body.message ?? `HTTP ${res.status}`);
+    return new ApiError(res.status, body.detail?.message ?? body.message ?? `HTTP ${res.status}`);
   } catch {
-    return new Error(`HTTP ${res.status}`);
+    return new ApiError(res.status, `HTTP ${res.status}`);
   }
 }
 
@@ -31,6 +58,10 @@ export const api = {
   fireIncident: (repoId: string) => post<FireIncidentResponse>("/incidents", { repo_id: repoId }),
   chooseStrategy: (incidentId: string, strategy: StrategyKind) =>
     post<unknown>(`/incidents/${incidentId}/strategy`, { strategy }),
+  explore: (incidentId: string, strategy: StrategyKind) =>
+    post<ImplementationPlan>(`/incidents/${incidentId}/explore`, { strategy }),
+  discuss: (incidentId: string, kind: DiscussKind) =>
+    post<DiscussResult>(`/incidents/${incidentId}/discuss`, { kind }),
   getTransplant: (transplantId: string) => get<Transplant>(`/transplants/${transplantId}`),
   submitReview: (transplantId: string, decision: "accept_all" | "reject", perFile: FileDecisionIn[], reason: string | null) =>
     post<ReviewResponse>(`/transplants/${transplantId}/review`, { decision, per_file: perFile, reason }),

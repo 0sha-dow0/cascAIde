@@ -6,6 +6,7 @@ import threading
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from backend.domain.enums import RepoAccess
 from backend.domain.errors import Err, GitHubError, Ok, RateLimitError, Result
 from backend.domain.models import FileContent, PullRequestRef, RewrittenFile
 from backend.ports.github import GitHubClient, NewPr, PrSummary
@@ -115,21 +116,33 @@ class FakeGitHubClient(GitHubClient):
         repos: Mapping[str, Sequence[SeededPr]],
         *,
         rate_limited: bool = False,
+        auto_create_repos: bool = False,
     ) -> None:
         self._repos: dict[str, _RepoState] = {
             repo_url: _build_repo_state(repo_url, seeded_prs)
             for repo_url, seeded_prs in repos.items()
         }
         self._rate_limited = rate_limited
+        self._auto_create_repos = auto_create_repos
         self._lock = threading.Lock()
 
+    def permission(
+        self, repo_url: str, acting_user_id: str | None
+    ) -> Result[RepoAccess, GitHubError]:
+        if self._rate_limited:
+            return self._rate_limit_error()
+        return Ok(RepoAccess.WRITE)
+
     def open_pr(
-        self, repo_url: str, pr: NewPr, idempotency_key: str
+        self, repo_url: str, pr: NewPr, idempotency_key: str, acting_user_id: str | None = None
     ) -> Result[PullRequestRef, GitHubError]:
         with self._lock:
             if self._rate_limited:
                 return self._rate_limit_error()
             repo = self._repos.get(repo_url)
+            if repo is None and self._auto_create_repos and repo_url:
+                repo = _build_repo_state(repo_url, ())
+                self._repos[repo_url] = repo
             if repo is None:
                 return self._unknown_repo_error(repo_url)
             if not idempotency_key:
@@ -147,6 +160,22 @@ class FakeGitHubClient(GitHubClient):
             )
             repo.open_pr_keys[idempotency_key] = number
             return Ok(self._pr_ref(repo_url, number))
+
+    def open_issue(
+        self, repo_url: str, title: str, body: str, acting_user_id: str | None = None
+    ) -> Result[PullRequestRef, GitHubError]:
+        with self._lock:
+            if self._rate_limited:
+                return self._rate_limit_error()
+            repo = self._repos.get(repo_url)
+            if repo is None and self._auto_create_repos and repo_url:
+                repo = _build_repo_state(repo_url, ())
+                self._repos[repo_url] = repo
+            if repo is None:
+                return self._unknown_repo_error(repo_url)
+            number = repo.next_number
+            repo.next_number += 1
+            return Ok(PullRequestRef(number=number, url=f"{repo_url.rstrip('/')}/issues/{number}"))
 
     def list_open_prs(self, repo_url: str) -> Result[tuple[PrSummary, ...], GitHubError]:
         with self._lock:

@@ -5,6 +5,7 @@ from typing import Final
 
 from backend import demo_fixtures
 from backend.adapters.fake.fake_auth import FakeAuthProvider
+from backend.adapters.fake.fake_code_memory import FakeCodeMemory
 from backend.adapters.fake.fake_event_sink import InMemoryEventSink
 from backend.adapters.fake.fake_github import FakeGitHubClient
 from backend.adapters.fake.fake_graph_store import FakeGraphStore
@@ -12,20 +13,26 @@ from backend.adapters.fake.fake_llm import FakeLlmClientFactory
 from backend.adapters.fake.fake_record_store import FakeRecordStore
 from backend.adapters.fake.fake_repo_content import FakeRepoContentProvider
 from backend.adapters.fake.fake_sandbox import FakeSandbox
+from backend.adapters.live.live_advisory import GitHubAdvisoryClient
 from backend.adapters.live.live_auth import LiveAuthProvider
+from backend.adapters.live.live_code_memory import LiveCogneeCloudCodeMemory
+from backend.adapters.live.live_github import LiveGitHubClient
+from backend.adapters.live.live_github_butterbase import ButterbaseGitHubClient
 from backend.adapters.live.live_graph_store import LiveGraphStore
 from backend.adapters.live.live_llm import LiveLlmClientFactory
 from backend.adapters.live.live_record_store import LiveRecordStore
 from backend.config import Settings
 from backend.domain.determinism import Clock, IdGenerator, SequentialIdGenerator, SystemClock
 from backend.domain.enums import LlmRole, SandboxOutcome, StrategyKind
-from backend.domain.errors import ConfigError, Err, IngestError, Ok, Result, SandboxError
+from backend.domain.errors import ConfigError, Err, IngestError, LlmError, Ok, Result, SandboxError
 from backend.domain.models import FileContent, NormalizedOutput
+from backend.ports.advisory import AdvisoryClient
 from backend.ports.auth import AuthProvider
+from backend.ports.code_memory import CodeMemory
 from backend.ports.event_sink import EventSink
 from backend.ports.github import GitHubClient
 from backend.ports.graph_store import GraphStore
-from backend.ports.llm import LlmClient, LlmClientFactory, LlmResponse
+from backend.ports.llm import LlmClient, LlmClientFactory, LlmRequest, LlmResponse
 from backend.ports.record_store import RecordStore
 from backend.ports.repo_content import RepoContentProvider
 from backend.adapters.live.live_repo_content import LiveRepoContentProvider
@@ -38,6 +45,7 @@ from backend.ports.sandbox import (
     validate_command,
     validate_exec_timeout,
 )
+from backend.services.explore import ExploreService
 from backend.services.graph_builder import GraphBuilder
 from backend.services.ingestion import IngestionService
 from backend.services.judges import JudgePanel
@@ -75,6 +83,10 @@ class Container:
     ingestion: IngestionService
     underwriter: Underwriter
     mitigation: MitigationService
+    explore: ExploreService
+    advisory: AdvisoryClient
+    code_memory: CodeMemory
+    github: GitHubClient
     orchestrator: PipelineOrchestrator
     review: ReviewService
     pr: PullRequestService
@@ -105,6 +117,26 @@ def _mitigation_response() -> LlmResponse:
         '"residual_risk":"full CVE exposure","rationale":"Vulnerable path stays live."}}}}'
     )
     return LlmResponse(text=card.replace("{{", "{").replace("}}", "}"), model="fake", finish_reason="stop")
+
+
+def _explore_response() -> LlmResponse:
+    plan = (
+        '{"summary":"Replace axios with the native fetch API behind a small http helper.",'
+        '"steps":['
+        '{"title":"Add a fetch-based http helper",'
+        '"detail":"Create src/httpClient.js exposing get and post that wrap fetch and '
+        'return a response with a data field.","file_refs":["src/httpClient.js"]},'
+        '{"title":"Repoint the call sites",'
+        '"detail":"Swap the axios import for the new helper in src/api.js and '
+        'src/userClient.js, keeping the same call shape.",'
+        '"file_refs":["src/api.js","src/userClient.js"]},'
+        '{"title":"Verify behavior",'
+        '"detail":"Run node --check and the test suite to confirm request/response '
+        'parity before opening a PR.","file_refs":[]}'
+        '],'
+        '"grounded_files":["src/httpClient.js","src/api.js","src/userClient.js"]}'
+    )
+    return LlmResponse(text=plan, model="fake", finish_reason="stop")
 
 
 def _transplant_response() -> LlmResponse:
@@ -141,15 +173,18 @@ def _fake_llm_scripted() -> Mapping[LlmRole, Sequence[LlmResponse]]:
         LlmRole.JUDGE_RECIPE: judges,
         LlmRole.MITIGATION: [_mitigation_response(), _mitigation_response()],
         LlmRole.PR_SCREEN: [_judge_response()],
+        LlmRole.EXPLORE: [_explore_response(), _explore_response()],
     }
 
 
 _LIVE_JUDGE_ROLES: frozenset[LlmRole] = frozenset(
     {
+        LlmRole.TRANSPLANT,
         LlmRole.JUDGE_CORRECTNESS,
         LlmRole.JUDGE_SECURITY,
         LlmRole.JUDGE_MINIMALITY,
         LlmRole.JUDGE_RECIPE,
+        LlmRole.EXPLORE,
     }
 )
 
@@ -233,11 +268,44 @@ class HybridLlmClientFactory(LlmClientFactory):
         return self._fake.for_role(role)
 
 
+class _RepeatingLlmClient(LlmClient):
+    def __init__(self, response: LlmResponse) -> None:
+        self._response = response
+
+    def complete(self, req: LlmRequest) -> Result[LlmResponse, LlmError]:
+        return Ok(self._response)
+
+
+class _RepeatingLlmClientFactory(LlmClientFactory):
+    def __init__(self, responses: Mapping[LlmRole, LlmResponse]) -> None:
+        self._responses = responses
+
+    def for_role(self, role: LlmRole) -> Result[LlmClient, ConfigError]:
+        response = self._responses.get(role)
+        if response is None:
+            return Err(ConfigError("no scripted response for role", {"role": role.value}))
+        return Ok(_RepeatingLlmClient(response))
+
+
+def _repeating_responses() -> Mapping[LlmRole, LlmResponse]:
+    judge = _judge_response()
+    return {
+        LlmRole.TRANSPLANT: _transplant_response(),
+        LlmRole.JUDGE_CORRECTNESS: judge,
+        LlmRole.JUDGE_SECURITY: judge,
+        LlmRole.JUDGE_MINIMALITY: judge,
+        LlmRole.JUDGE_RECIPE: judge,
+        LlmRole.MITIGATION: _mitigation_response(),
+        LlmRole.PR_SCREEN: judge,
+        LlmRole.EXPLORE: _explore_response(),
+    }
+
+
 def _build_llm(settings: Settings) -> LlmClientFactory:
-    fake = FakeLlmClientFactory(_fake_llm_scripted())
+    deterministic = _RepeatingLlmClientFactory(_repeating_responses())
     if settings.use_fakes:
-        return fake
-    return HybridLlmClientFactory(LiveLlmClientFactory(settings), fake, _LIVE_JUDGE_ROLES)
+        return deterministic
+    return HybridLlmClientFactory(LiveLlmClientFactory(settings), deterministic, _LIVE_JUDGE_ROLES)
 
 
 def _build_graph_store(settings: Settings) -> GraphStore:
@@ -254,8 +322,12 @@ def _build_graph_store(settings: Settings) -> GraphStore:
 
 
 def _build_record_store(settings: Settings, clock: Clock) -> RecordStore:
+    # Live Butterbase persistence (LiveRecordStore) rewrite is pending (Phase 3). Gate it behind an
+    # explicit opt-in so the auth cutover (Butterbase base_url) does not activate the old live store.
+    store_enabled = os.environ.get("DEPCOVER_BUTTERBASE_STORE", "").strip().lower() in _TRUE_TOKENS
     if (
-        not settings.use_fakes
+        store_enabled
+        and not settings.use_fakes
         and _present(settings.butterbase_base_url)
         and _env_present(settings.butterbase_key_env)
         and settings.butterbase_key_env is not None
@@ -283,15 +355,55 @@ def _build_validator_sandbox(settings: Settings, fallback: SandboxRunner) -> San
     return LiveSandbox(api_key, api_url)
 
 
-def _build_auth(settings: Settings) -> AuthProvider:
+def _build_github(settings: Settings) -> GitHubClient:
+    # Preferred: act as the signed-in user via Butterbase's GitHub Integration (real PRs, permission gate).
+    if _butterbase_ready(settings) and settings.butterbase_app_id is not None:
+        key = os.environ[settings.butterbase_key_env or ""]
+        return ButterbaseGitHubClient(settings.butterbase_base_url or "", settings.butterbase_app_id, key)
+    token_env = settings.github_token_env
+    if not settings.use_fakes and token_env is not None and _env_present(token_env):
+        return LiveGitHubClient(os.environ[token_env])
+    return FakeGitHubClient(demo_fixtures.github_seed(), auto_create_repos=True)
+
+
+def _build_advisory(settings: Settings) -> AdvisoryClient:
+    # Advisories are always live GitHub Advisory Database — no fake fallback.
+    # A token lifts the rate limit; unauthenticated still returns real data.
+    token_env = settings.github_token_env
+    token = (
+        os.environ[token_env]
+        if token_env is not None and _env_present(token_env)
+        else None
+    )
+    return GitHubAdvisoryClient(token)
+
+
+def _build_code_memory(settings: Settings) -> CodeMemory:
     if (
         not settings.use_fakes
+        and _present(settings.cognee_base_url)
+        and _env_present(settings.cognee_api_key_env)
+        and settings.cognee_api_key_env is not None
+    ):
+        key = os.environ[settings.cognee_api_key_env]
+        return LiveCogneeCloudCodeMemory(settings.cognee_base_url or "", key)
+    return FakeCodeMemory()
+
+
+def _butterbase_ready(settings: Settings) -> bool:
+    return (
+        not settings.use_fakes
         and _present(settings.butterbase_base_url)
+        and _present(settings.butterbase_app_id)
         and _env_present(settings.butterbase_key_env)
         and settings.butterbase_key_env is not None
-    ):
-        key = os.environ[settings.butterbase_key_env]
-        return LiveAuthProvider(settings.butterbase_base_url or "", key)
+    )
+
+
+def _build_auth(settings: Settings) -> AuthProvider:
+    if _butterbase_ready(settings) and settings.butterbase_app_id is not None:
+        key = os.environ[settings.butterbase_key_env or ""]
+        return LiveAuthProvider(settings.butterbase_base_url or "", settings.butterbase_app_id, key)
     return FakeAuthProvider(demo_fixtures.auth_tokens_seed())
 
 
@@ -324,12 +436,15 @@ def build_container(settings: Settings) -> Result[Container, ConfigError]:
     )
     sandbox: SandboxRunner = LenientSandbox(demo_fixtures.scripted_sandbox(), capacity=32)
     events: EventSink = InMemoryEventSink(clock)
-    github: GitHubClient = FakeGitHubClient(demo_fixtures.github_seed())
+    github: GitHubClient = _build_github(settings)
+    advisory: AdvisoryClient = _build_advisory(settings)
+    code_memory: CodeMemory = _build_code_memory(settings)
 
     builder = GraphBuilder(graph_store)
     ingestion = IngestionService(repos, builder, store, clock, ids)
     underwriter = Underwriter(sandbox, store, settings, clock, ids)
     mitigation = MitigationService(llm)
+    explore = ExploreService(llm, code_memory)
     agent = TransplantAgent(llm)
     validator = TransplantValidator(_build_validator_sandbox(settings, sandbox), settings)
     verifier = VerificationEngine(sandbox, settings)
@@ -359,6 +474,10 @@ def build_container(settings: Settings) -> Result[Container, ConfigError]:
             ingestion=ingestion,
             underwriter=underwriter,
             mitigation=mitigation,
+            explore=explore,
+            advisory=advisory,
+            code_memory=code_memory,
+            github=github,
             orchestrator=orchestrator,
             review=review,
             pr=pull_request,

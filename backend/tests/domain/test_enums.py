@@ -103,6 +103,7 @@ EXPECTED_ENUM_MEMBERS: dict[type[StrEnum], dict[str, str]] = {
         "JUDGE_RECIPE": "judge_recipe",
         "MITIGATION": "mitigation",
         "PR_SCREEN": "pr_screen",
+        "EXPLORE": "explore",
     },
     GraphNodeKind: {
         "PACKAGE": "package",
