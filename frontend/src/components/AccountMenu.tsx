@@ -57,12 +57,15 @@ export function AccountMenu({
     <div className="flex items-center gap-2">
       {connected === false && (
         <Button size="sm" variant="outline" onClick={connectGitHub}>
-          Connect GitHub
+          <span className="hidden sm:inline">Connect GitHub</span>
+          <span className="sm:hidden">Connect</span>
         </Button>
       )}
       {connected === true && (
         <Badge variant="success" className="gap-1">
-          <Check className="h-3 w-3" /> GitHub connected
+          <Check className="h-3 w-3" />
+          <span className="hidden sm:inline">GitHub connected</span>
+          <span className="sm:hidden">GitHub</span>
         </Badge>
       )}
       <div className="flex items-center gap-1.5">

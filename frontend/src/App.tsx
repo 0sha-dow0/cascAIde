@@ -173,51 +173,57 @@ export default function App({
   };
 
   return (
-    <div className="min-h-screen pt-14">
-      <header className="fixed inset-x-0 top-0 z-40 border-b bg-background">
-        <div className="mx-auto flex h-14 max-w-[1240px] items-center gap-3 px-6">
-          <a href="#" className="flex items-center gap-2.5" title="Back to home">
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-40 border-b bg-background">
+        <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0">
+          <a href="#" className="order-1 flex shrink-0 items-center gap-2.5" title="Back to home">
             <span className="grad-brand flex h-7 w-7 items-center justify-center rounded-[8px] text-[15px] font-bold text-white shadow-sm">
               ⟩
             </span>
             <span className="grad-text font-display text-[16px] font-bold tracking-tight">cascAIde</span>
           </a>
-          <div className="mx-2 hidden h-5 sm:block">
-            <div className="h-full w-px bg-border" />
+          <div className="order-2 ml-auto flex shrink-0 items-center gap-1.5 sm:order-3 sm:ml-0">
+            <ThemeToggle />
+            {config?.auth_required && session && onSignOut && (
+              <AccountMenu config={config} session={session} onSignOut={onSignOut} />
+            )}
           </div>
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="Public GitHub repo URL"
-            className="max-w-xl flex-1 font-mono text-[13px]"
-            onKeyDown={(e) => { if (e.key === "Enter") void doScan(); }}
-          />
-          <Button onClick={doScan} disabled={busy}>
-            {busy ? <Spinner /> : <Search />}
-            Scan repo
-          </Button>
-          <Button variant="outline" onClick={doFire} disabled={!repoId}>
-            Fire CVE
-          </Button>
-          <ThemeToggle />
-          {config?.auth_required && session && onSignOut && (
-            <AccountMenu config={config} session={session} onSignOut={onSignOut} />
-          )}
+          <div className="order-3 flex w-full items-center gap-2 sm:order-2 sm:w-auto sm:flex-1">
+            <div className="mx-1 hidden h-5 sm:block">
+              <div className="h-full w-px bg-border" />
+            </div>
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Public GitHub repo URL"
+              className="min-w-0 flex-1 font-mono text-[13px] sm:max-w-xl"
+              onKeyDown={(e) => { if (e.key === "Enter") void doScan(); }}
+            />
+            <Button onClick={doScan} disabled={busy} className="shrink-0">
+              {busy ? <Spinner /> : <Search />}
+              <span className="hidden sm:inline">Scan repo</span>
+              <span className="sm:hidden">Scan</span>
+            </Button>
+            <Button variant="outline" onClick={doFire} disabled={!repoId} className="shrink-0">
+              <span className="hidden sm:inline">Fire CVE</span>
+              <span className="sm:hidden">Fire</span>
+            </Button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-[1240px] flex-col gap-6 px-6 py-7">
-        <div className="flex items-end justify-between gap-4">
+      <main className="mx-auto flex max-w-[1240px] flex-col gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-7">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
           <div>
-            <h1 className="font-display text-xl font-semibold tracking-tight">
+            <h1 className="font-display text-lg font-semibold tracking-tight sm:text-xl">
               Autonomous dependency transplant
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-[13px] text-muted-foreground sm:text-sm">
               Map the blast radius, rewrite <span className="font-mono text-[13px]">axios → fetch</span>, prove behavior, gate on a 4-judge consensus + you.
             </p>
           </div>
           {status && (
-            <span className="hidden shrink-0 items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-[12.5px] text-muted-foreground md:inline-flex">
+            <span className="inline-flex shrink-0 items-center gap-2 self-start rounded-full border bg-card px-3 py-1.5 text-[12.5px] text-muted-foreground sm:self-auto">
               {busy && <Spinner className="size-3.5" />}
               {status}
             </span>
@@ -234,7 +240,7 @@ export default function App({
               <Badge variant="outline">call site</Badge>
             </div>
           </CardHeader>
-          <CardContent className="h-[440px] p-0">
+          <CardContent className="h-[300px] p-0 sm:h-[440px]">
             <GraphPanel
               layout={scan?.graph_layout ?? null}
               plan={scan?.surgery_plan ?? null}
